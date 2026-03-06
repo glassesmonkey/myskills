@@ -52,5 +52,6 @@ Add whatever helps you do your job. This is your cheat sheet.
 - Hook 脚本：`~/.codex/notify.py`
 - 原始事件日志：`~/.codex/notify-events.jsonl`
 - 唤醒日志：`~/.codex/notify-wake.log`
+- **真实 payload 形态（已验证）**：Codex 会把事件 JSON 作为 `notify.py` 的**第一个命令行参数**传入，而不是走 stdin
 - 作用：Codex 高价值事件（完成/审批/错误）会通过 `openclaw system event --mode now` 立即唤醒主会话，减少 tmux 多 agent 轮询
 
