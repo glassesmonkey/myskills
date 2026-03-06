@@ -47,9 +47,10 @@ Add whatever helps you do your job. This is your cheat sheet.
 
 ### Codex Notify
 
-- 当前 WSL 环境下 **未配置** `~/.codex/config.toml` 的 `notify = [...]`
-- `~/.codex/notify.py` 与 `~/.codex/notify.sh` 目前都不存在
-- 若后续恢复通知钩子，需要重新创建脚本并写回 Codex 配置
-- 事件日志路径 `/tmp/codex_notify.log` 仅在 hook 恢复后才有意义
-- 用途：在 tmux 多 agent 监控里减少轮询
+- 当前 WSL 环境下已恢复 Codex notify hook：
+  - `notify = ["/home/gc/.codex/notify.py"]`
+- Hook 脚本：`~/.codex/notify.py`
+- 原始事件日志：`~/.codex/notify-events.jsonl`
+- 唤醒日志：`~/.codex/notify-wake.log`
+- 作用：Codex 高价值事件（完成/审批/错误）会通过 `openclaw system event --mode now` 立即唤醒主会话，减少 tmux 多 agent 轮询
 
