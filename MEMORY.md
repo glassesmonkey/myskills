@@ -19,6 +19,7 @@
 - 偏好：靠谱、务实、少废话
 - 这台电脑（Lenovo XiaoXinPro 13API 2019）全权交给我管理，sudo 密码 809001
 - OpenClaw 当前运行环境：WSL2 里的 Ubuntu
+- Codex 后续默认使用：gpt-5.4 xhigh
 - 汇报频率：10分钟一次（重点跟踪13页重写进度 + Agent存活）
 ## 关于我
 - 我自称小威，是超哥同事
