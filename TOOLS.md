@@ -55,3 +55,11 @@ Add whatever helps you do your job. This is your cheat sheet.
 - **真实 payload 形态（已验证）**：Codex 会把事件 JSON 作为 `notify.py` 的**第一个命令行参数**传入，而不是走 stdin
 - 作用：Codex 高价值事件（完成/审批/错误）会通过 `openclaw system event --mode now` 立即唤醒主会话，减少 tmux 多 agent 轮询
 
+### OpenClaw Backup
+
+- 迁移备份脚本：`/home/gc/.openclaw/workspace/scripts/push-openclaw-backup.sh`
+- 远端仓库：`git@github.com:Rice-PurityTest/openclaw_backup_i732g_xiaowei.git`
+- 鉴权方式：`~/.ssh/id_ed25519_github`
+- 默认提交身份：`Alex1 <alexfefun1@gmail.com>`
+- 作用：把 workspace 记忆/配置 + `.codex` 配置 + 选定 `.openclaw` 配置同步到 GitHub，便于迁移到新机器
+
