@@ -5,7 +5,12 @@ from __future__ import annotations
 
 import re
 import sys
+from pathlib import Path
 from urllib.parse import urlparse
+
+VENDOR_PYLIB = Path(__file__).resolve().parents[1] / "vendor" / "pylib"
+if VENDOR_PYLIB.exists() and str(VENDOR_PYLIB) not in sys.path:
+    sys.path.insert(0, str(VENDOR_PYLIB))
 
 import html2text
 from scrapling.fetchers import Fetcher
