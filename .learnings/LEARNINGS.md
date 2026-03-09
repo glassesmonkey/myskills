@@ -41,6 +41,55 @@ Docker build fails on Apple Silicon due to platform mismatch
 ...
 ```
 
+## [LRN-20260309-005] best_practice
+
+**Logged**: 2026-03-09T23:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Summary
+Cron-style quiet tasks must not send acknowledgement text when the command succeeds; return with no visible reply unless an alert is explicitly required.
+
+### Details
+A cron-triggered task asked to run `git -C /home/gc/kb/obsidian-vault pull --rebase --autostash` and exit quietly on success, only announcing on error. The command later succeeded (`Already up to date.`), but I still produced a visible acknowledgement instead of staying silent. That violated the requested success behavior and caused the cron task to be treated as incomplete.
+
+### Suggested Action
+- For quiet cron jobs, treat successful execution as "no user-facing message" unless the caller explicitly asks for confirmation.
+- If I need extra internal verification, do it inside the tool call chain and only surface a message when the failure path triggers.
+- When the tool output already proves success, do not add conversational filler.
+
+### Metadata
+- Source: user_feedback
+- Related Files: .learnings/LEARNINGS.md
+- Tags: cron, quiet-success, acknowledgements, correction
+
+---
+
+
+**Logged**: 2026-03-09T23:13:53+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: config
+
+### Summary
+Diagnosing `sessions_spawn` based only on the visible tool list can be misleading because command/runtime paths may still be able to spawn subagents.
+
+### Details
+I initially concluded that `sessions_spawn` was unavailable because this chat's explicit tool surface only showed `sessions_list`, `sessions_history`, and `sessions_send`. After restart and a real test, subagent spawning succeeded. This means the missing piece was not necessarily gateway config or runtime capability; it may have been a mismatch between the model-visible tool manifest for this session and the command/runtime dispatch path that can still create subagents.
+
+### Suggested Action
+- When checking spawn availability, distinguish between:
+  1) model-visible first-class tools in the current session, and
+  2) gateway/runtime command paths that can also spawn subagents.
+- Do not state "spawn is unavailable" unless both layers are checked or a real spawn attempt fails.
+- Prefer a direct live spawn test over inference from tool-list absence.
+
+### Metadata
+- Source: user_feedback
+- Related Files: .learnings/LEARNINGS.md
+- Tags: sessions_spawn, tool-surface, runtime-dispatch, correction
+
 ---
 
 ## [LRN-20260226-001] correction
@@ -511,5 +560,60 @@ Codex 的 xhigh 模式做完整任务耗时 10 分钟左右通常是正常现象
 - Source: conversation
 - Related Files: /home/gc/.openclaw/workspace/AGENTS.md, /home/gc/.openclaw/workspace/MEMORY.md
 - Tags: seo, copywriting, research-first, correction, ballkorokoro
+
+---
+
+## [LRN-20260309-001] best_practice
+
+**Logged**: 2026-03-09T16:48:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: infra
+
+### Summary
+多 tmux/Codex 持续任务在“上一轮已答完但未收到下一轮明确指令”时，会表现为会话存活但空转；必须使用显式 handoff/state 机制避免任务推进断裂。
+
+### Details
+本次 ballkorokoro 任务中，多个 Codex tmux session 的 node 进程仍在，但输出已经停在总结/待命提示符。根因不是进程挂死，而是：上一轮任务结束后没有把新的执行目标（research-first 的日语改稿）重新明确下发到对应 session，导致系统表面上“还活着”，实际上没有继续产出。
+
+### Suggested Action
+- 持续任务必须有单独状态文件（当前阶段、owner、下一步、阻塞、验收标准）。
+- 每个 tmux session 只负责单一角色，且每轮任务结束必须写一段明确 handoff。 
+- 连续两次检查无文件变更即判定停滞，不允许重复汇报“阻塞中”；必须执行 steer / 重新派单 / 关停回收中的一个动作。
+- 汇报前必须核对 git diff、目标文件 mtime、pane 输出，而不是凭记忆。
+
+### Metadata
+- Source: simplify-and-harden
+- Related Files: AGENTS.md, .learnings/LEARNINGS.md
+- Tags: tmux, codex, task-orchestration, handoff, idle-session, best-practice
+- Pattern-Key: task.handoff-prevents-idle-sessions
+- Recurrence-Count: 1
+- First-Seen: 2026-03-09
+- Last-Seen: 2026-03-09
+
+---
+
+## [LRN-20260309-002] correction
+
+**Logged**: 2026-03-09T22:21:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: infra
+
+### Summary
+涉及编程的任务必须交给 Codex 执行；主 session 负责任务编排、状态管理、验收和汇报，不应越界直接承担编码实现。
+
+### Details
+用户明确要求“涉及编程的任务必须用 codex, 术业有专攻, 别越界, 你就负责任务编排”。此前在 ballkorokoro JP rewrite 中，虽然使用了新的 task-governance skill，但实际代码和文案修改由主 session 直接完成，没有把实现层交给 Codex/ACP。这违背了用户对职责分工的明确要求。
+
+### Suggested Action
+- 后续凡属编程/改代码/改页面实现类任务，默认由 Codex 执行（优先 ACP 方案，其次按用户要求的 Codex 通道）。
+- 主 session 仅负责：任务 intake、拆分、派单、状态文件、进度跟踪、QA 验收、结果汇总。
+- 若想亲自改一处一行级小修，也应先确认是否属于“无需 Codex 的简单修改”；否则默认不要直接下手。
+
+### Metadata
+- Source: user_feedback
+- Related Files: skills/task-execution-tracker/SKILL.md, skills/multi-acp-collaboration/SKILL.md
+- Tags: codex, orchestration, role-boundary, correction
 
 ---
