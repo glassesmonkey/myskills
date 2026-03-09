@@ -1,13 +1,13 @@
 ---
 name: web-research
-description: "Search the web and fetch page content for research and content writing. Use when: (1) gathering reference material before writing content, (2) checking competitor pages, (3) researching keywords or topics, (4) finding Google PAA questions, (5) reading articles for inspiration. Provides Tavily search, DuckDuckGo search fallback, and jina.ai Reader for clean page extraction."
+description: "Search the web and fetch readable page content for research and content writing. Use when: (1) gathering reference material before writing content, (2) checking competitor pages, (3) researching keywords or topics, (4) finding Google PAA questions, (5) reading articles or extracting webpage正文. Supports Tavily / DuckDuckGo search plus multi-tier page extraction via jina.ai Reader, Scrapling+html2text, web_fetch, and browser/playwright-cli escalation for login-gated or dynamic pages."
 ---
 
 # Web Research Skill
 
-Search the web and extract clean content from URLs for research purposes.
+Search the web and extract readable content from URLs for research purposes.
 
-## Tools (use in order of preference)
+## Search tools
 
 ### 1. Search — Tavily (primary, higher quality)
 
@@ -38,50 +38,112 @@ If `ddgs` is not installed or import fails, do **not** stop there. Use one of th
 - Use Bing search result pages with `curl`/browser automation as a temporary SERP source.
 - If DuckDuckGo HTML/lite triggers a bot challenge, switch sources instead of retry-looping.
 
-### 3. Fetch full page — jina.ai Reader (primary)
+## Readable page extraction ladder
+
+The goal is **正文提纯** for model consumption, not dumping the whole page into context.
+
+### 3. Jina Reader — primary for public article pages
 
 ```bash
-curl -sL "https://r.jina.ai/https://example.com/page" -H "Accept: text/markdown" | head -300
+curl -sL "https://r.jina.ai/http://example.com/page" -H "Accept: text/markdown"
 ```
 
-Returns clean Markdown with title/meta. Works with JS-heavy sites, paywalls, Twitter/X.
+Use first for:
+- public blog posts
+- Substack / Medium style pages
+- general research reading
 
-### 4. Fetch full page — web_fetch (lightweight fallback)
+Benefits:
+- fast
+- clean Markdown
+- usually lowest token cost for article reading
 
-Use OpenClaw's built-in `web_fetch` tool for simple pages that don't need JS rendering.
+Limitations:
+- quota limited
+- can fail on WeChat / some domestic sites / some protected pages
 
-### 5. Browser SERP inspection — browser / agent-browser (when needed)
+### 4. Scrapling + html2text — fallback for anti-bot/public dynamic pages
 
-Use a browser when you need actual SERP layout details such as:
-- Google PAA blocks
-- related searches
-- autocomplete / UI-only SERP hints
-- dynamic result pages that simple fetch/search tools miss
+Use bundled script when:
+- Jina fails or is empty
+- target is WeChat article / Zhihu / Juejin / CSDN
+- page is public but raw fetch is noisy
 
-WSL/Linux notes:
-- If OpenClaw `browser` is unavailable, `agent-browser` is acceptable.
-- In WSL, `agent-browser` may need Playwright Chromium installed first:
-
+Script:
 ```bash
-npx playwright install chromium
+python3 scripts/fetch_readable.py <url> 30000
 ```
 
-- If there is no desktop display, try a virtual display (`xvfb-run` / Xvfb) **only if already available**.
-- Do not get stuck debugging browser infra for too long: if browser automation is blocked, continue with search + jina/web_fetch and note the limitation in the research file.
+What it does:
+- fetches page HTML with Scrapling
+- tries article-like selectors first
+- repairs lazy-loaded image attributes on common sites
+- converts selected HTML to Markdown with html2text
+
+### 5. web_fetch — static fallback
+
+Use the built-in `web_fetch` tool for:
+- GitHub README
+- ordinary static documentation pages
+- simple pages that do not need JS rendering
+
+Caution:
+- often includes nav/sidebar/footer noise
+
+### 6. Browser / playwright-cli escalation — login state or interaction required
+
+Escalate when:
+- page requires login
+- content appears only after hydration
+- you need to click `Read more` / `展开全文` / `Load more`
+- infinite scroll or consent wall blocks the content
+- persistent cookies / localStorage are required
+
+Read `references/playwright-cli-reading.md` before using this route.
+
+Important:
+- browser automation is for **revealing** the real content
+- then extract only the content container HTML and convert it to Markdown
+- do **not** feed full accessibility trees or full-page snapshots into the model unless necessary
+
+## Fast domain routing
+
+Use Scrapling first for:
+- `mp.weixin.qq.com`
+- `zhuanlan.zhihu.com`
+- `juejin.cn`
+- `csdn.net`
+
+Use Jina or web_fetch first for:
+- `github.com`
+- public docs/blog pages
+
+Use browser / playwright-cli first for:
+- login-gated sites
+- dashboards / apps
+- pages that need interaction before content appears
 
 ## Workflow
 
 1. **Search** for the topic using Tavily or ddgs
 2. **Pick** the 3-5 most relevant results
-3. **Fetch** full content via jina.ai Reader
+3. **Fetch readable content** using the extraction ladder above
 4. **Extract** key facts, data points, and quotes
-5. **Use** as source material for content writing
+5. **Write findings to a local research file** before drafting content
 
 ## Reliability rules
 
 - If one search source fails, switch quickly; do not burn time retrying the same broken path.
-- Record environment limitations in the research file (e.g. `ddgs missing`, `DDG challenge`, `browser unavailable`).
+- If one extraction route fails, escalate to the next route instead of looping.
+- Record environment limitations in the research file (e.g. `ddgs missing`, `browser unavailable`, `playwright-cli not installed`).
 - For copywriting/SEO work, research is only "done" once queries, sources, and extracted patterns are written to a file.
+- If the same URL fails twice, stop retrying and mark it as not extractable with the current environment.
+
+## Local environment notes
+
+- On this host, `python3 -m venv` may fail if `python3-venv` is not installed.
+- Prefer isolated local installs (`pip --target <dir>`) over mutating system Python.
+- `playwright-cli` is optional and should not be assumed present.
 
 ## Tips
 
