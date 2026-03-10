@@ -4,6 +4,40 @@ Command failures, exceptions, and unexpected behaviors.
 
 ---
 
+## [ERR-20260309-001] git-pull-obsidian-vault
+
+**Logged**: 2026-03-09T09:44:57+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: infra
+
+### Summary
+Automated git pull for the Obsidian vault failed because the SSH connection to the Git remote was closed during key exchange, so Git could not read from the remote repository.
+
+### Error
+```
+kex_exchange_identification: Connection closed by remote host
+Connection closed by 198.18.0.46 port 22
+fatal: Could not read from remote repository.
+```
+
+### Context
+- Operation: `git -C /home/gc/kb/obsidian-vault pull --rebase --autostash`
+- Trigger: cron job `obsidian-vault-auto-pull-30m`
+- Environment: WSL2 host, automated background pull
+
+### Suggested Fix
+- Retry later in case the SSH relay/network path is temporarily unavailable.
+- Verify SSH access to the Git remote (`ssh -T git@<host>` or inspect `git remote -v`).
+- Check whether the remote host or local network/firewall is dropping SSH connections on port 22.
+
+### Metadata
+- Reproducible: unknown
+- Related Files: /home/gc/kb/obsidian-vault/.git/config
+- See Also: none
+
+---
+
 ## [ERR-20260227-001] memory_search
 
 **Logged**: 2026-02-27T10:14:27+08:00
@@ -300,5 +334,147 @@ ModuleNotFoundError: No module named 'tomllib'
 ### Metadata
 - Reproducible: yes
 - Related Files: /home/gc/.codex/config.toml
+
+---
+
+## [ERR-20260306-001] sessions_spawn(acp)
+
+**Logged**: 2026-03-06T16:06:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: config
+
+### Summary
+Attempt to spawn Codex via ACP runtime failed because ACP backend is not configured.
+
+### Error
+```
+ACP runtime backend is not configured. Install and enable the acpx runtime plugin.
+```
+
+### Context
+- Operation: sessions_spawn with runtime="acp", agentId="codex"
+- Goal: ask Codex for recommendation on installing third-party code-review skill
+
+### Suggested Fix
+Install/enable ACP runtime plugin (acpx), then retry sessions_spawn.
+
+### Metadata
+- Reproducible: yes
+- Related Files: /home/gc/.openclaw/workspace/.learnings/ERRORS.md
+
+---
+## [ERR-20260307-001] git-commit-identity-missing
+
+**Logged**: 2026-03-07T15:05:16+08:00
+**Priority**: medium
+**Status**: pending
+**Area**: config
+
+### Summary
+Git commit failed in /home/gc/Codex-Manager because user.name/user.email were not configured.
+
+### Error
+```
+Author identity unknown
+fatal: empty ident name (for <gc@MS-20160609SJYQ.localdomain>) not allowed
+```
+
+### Context
+- Operation: commit local changes before pushing to main
+- Repo: /home/gc/Codex-Manager
+
+### Suggested Fix
+Configure git user.name and user.email (repo-local or global) before commit.
+
+### Metadata
+- Reproducible: yes
+- Related Files: /home/gc/Codex-Manager/.git/config
+
+---
+
+## [ERR-20260307-001] jq_missing
+
+**Logged**: 2026-03-07T16:57:05+08:00
+**Priority**: low
+**Status**: pending
+**Area**: infra
+
+### Summary
+`jq` is not installed in this runtime environment.
+
+### Error
+```
+/bin/bash: line 1: jq: command not found
+```
+
+### Context
+Attempted to parse sessions.json quickly via jq during fallback audit.
+
+### Suggested Fix
+Use grep/read fallback path or install jq if JSON CLI parsing is needed frequently.
+
+### Metadata
+- Reproducible: yes
+- Related Files: /home/gc/.openclaw/agents/main/sessions/sessions.json
+
+---
+
+## [ERR-20260307-002] message_react_target_required
+
+**Logged**: 2026-03-07T19:05:09+08:00
+**Priority**: low
+**Status**: pending
+**Area**: config
+
+### Summary
+Telegram reaction via `message` tool failed because `target` was omitted.
+
+### Error
+```
+Use `target` instead of `to`/`channelId`.
+```
+
+### Context
+Attempted lightweight reaction acknowledgement in current Telegram group chat without specifying target chat identifier.
+
+### Suggested Fix
+When using `message` action `react`, include `target` (for example the current chat target) instead of relying on implicit routing.
+
+### Metadata
+- Reproducible: yes
+- Related Files: /home/gc/.openclaw/workspace/.learnings/ERRORS.md
+
+---
+
+## [ERR-20260310-001] sessions_spawn_acp
+
+**Logged**: 2026-03-10T10:48:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: infra
+
+### Summary
+ACP spawn from Telegram group session fails even after acpx plugin + codex agent config + restart.
+
+### Error
+```
+sessions_spawn(runtime="acp") -> spawnedBy is only supported for subagent:* sessions
+log: sessions.patch INVALID_REQUEST
+```
+
+### Context
+- acpx plugin loaded
+- agents list includes codex / claude-code with runtime.type=acp
+- acp.defaultAgent=codex
+- telegram.threadBindings.spawnAcpSessions=true
+- reproduced from session: agent:main:telegram:group:-5115776587
+
+### Suggested Fix
+Inspect OpenClaw ACP spawn path for incorrect sessions.patch spawnedBy write against acp session keys.
+
+### Metadata
+- Reproducible: yes
+- Related Files: ~/.openclaw/openclaw.json
 
 ---
