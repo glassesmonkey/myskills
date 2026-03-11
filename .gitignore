@@ -1,0 +1,10 @@
+*
+!.gitignore
+!web-reader/
+!web-reader/**
+!web-search/
+!web-search/**
+
+# Python generated files should not be versioned.
+**/__pycache__/
+*.pyc

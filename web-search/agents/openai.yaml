@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web Search"
+  short_description: "Tavily-first web search with DDG fallback"
+  default_prompt: "Use $web-search to search the web, prefer Tavily, and fall back to DuckDuckGo when needed."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web Reader"
+  short_description: "Read webpage content with Jina fallback"
+  default_prompt: "Use $web-reader to fetch readable content from this URL."
