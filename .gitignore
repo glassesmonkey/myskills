@@ -5,6 +5,10 @@
 !web-search/
 !web-search/**
 
+# Vendored dependencies stay local and should not be tracked.
+web-reader/vendor/
+web-search/vendor/
+
 # Python generated files should not be versioned.
 **/__pycache__/
 *.pyc
