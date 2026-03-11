@@ -66,9 +66,11 @@ The agent, not the script, owns the user interaction.
 
 Use `scripts/search.py` for deterministic search behavior.
 
-- Tavily path: call the Tavily HTTP API directly, so no extra Tavily SDK is required.
+- Tavily path: call the Tavily HTTP API with `curl`, so no Tavily SDK is required and local proxy/certificate handling is usually more reliable than Python `urllib`.
 - DuckDuckGo path: import `duckduckgo_search.DDGS`.
 - Output: print JSON so another Codex instance can inspect titles, URLs, snippets, and which provider was used.
+
+If Tavily fails, surface the curl error once and fall back quickly. Do not add retry loops.
 
 Examples:
 

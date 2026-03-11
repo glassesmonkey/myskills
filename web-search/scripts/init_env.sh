@@ -5,6 +5,15 @@ codex_home="${CODEX_HOME:-$HOME/.codex}"
 skills_dir="$codex_home/skills"
 web_reader_skill="$skills_dir/web-reader/SKILL.md"
 
+ensure_curl() {
+  if command -v curl >/dev/null 2>&1; then
+    echo "curl is available."
+  else
+    echo "curl is required for Tavily requests but was not found in PATH."
+    echo "Install curl or adjust PATH before using this skill."
+  fi
+}
+
 ensure_duckduckgo_search() {
   if python3 - <<'PY'
 from importlib.util import find_spec
@@ -45,6 +54,7 @@ else
   echo "如果用户跳过，再回退到 DuckDuckGo。"
 fi
 
+ensure_curl
 ensure_duckduckgo_search
 
 if [[ -f "$web_reader_skill" ]]; then

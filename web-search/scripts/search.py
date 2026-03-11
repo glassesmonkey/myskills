@@ -10,9 +10,8 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
-import urllib.error
-import urllib.request
 from typing import Any
 
 
@@ -43,7 +42,6 @@ def tavily_search(query: str, max_results: int, topic: str) -> dict[str, Any]:
 
     payload = json.dumps(
         {
-            "api_key": api_key,
             "query": query,
             "max_results": max_results,
             "topic": topic,
@@ -52,21 +50,43 @@ def tavily_search(query: str, max_results: int, topic: str) -> dict[str, Any]:
             "include_images": False,
             "include_raw_content": False,
         }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        "https://api.tavily.com/search",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
     )
+
+    command = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--fail-with-body",
+        "--max-time",
+        "20",
+        "-X",
+        "POST",
+        "https://api.tavily.com/search",
+        "-H",
+        "Content-Type: application/json",
+        "-H",
+        f"Authorization: Bearer {api_key}",
+        "-d",
+        payload,
+    ]
+
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            data = json.load(response)
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Tavily HTTP {exc.code}: {detail}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Tavily request failed: {exc.reason}") from exc
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("curl is not installed or not available in PATH") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = exc.stderr.strip() or exc.stdout.strip() or "unknown curl error"
+        raise RuntimeError(f"Tavily request failed: {detail}") from exc
+
+    try:
+        data = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Tavily returned invalid JSON") from exc
 
     results = [
         {
