@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat MP Article List"
+  short_description: "Open WeChat MP backend and extract a target account article list."
+  default_prompt: "Use $wechat-mp-article-list to open the WeChat Official Account backend, wait for login, and read a target account's article list."

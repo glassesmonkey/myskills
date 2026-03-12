@@ -4,6 +4,8 @@
 !web-reader/**
 !web-search/
 !web-search/**
+!wechat-mp-article-list/
+!wechat-mp-article-list/**
 
 # Vendored dependencies stay local and should not be tracked.
 web-reader/.DS_Store
