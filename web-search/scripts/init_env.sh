@@ -9,8 +9,22 @@ ensure_curl() {
   if command -v curl >/dev/null 2>&1; then
     echo "curl is available."
   else
-    echo "curl is required for Tavily requests but was not found in PATH."
+    echo "curl is required for Exa and Tavily requests but was not found in PATH."
     echo "Install curl or adjust PATH before using this skill."
+  fi
+}
+
+report_key_status() {
+  local key_name="$1"
+  local provider_name="$2"
+  local dashboard_url="$3"
+
+  if [[ -n "${!key_name:-}" ]]; then
+    echo "$key_name is configured. $provider_name is available."
+  else
+    echo "当前未配置 $key_name"
+    echo "可以去 $dashboard_url 获取"
+    echo "请先由 agent 询问用户是否现在提供 key。"
   fi
 }
 
@@ -45,14 +59,10 @@ PY
 
 echo "Checking web-search environment..."
 
-if [[ -n "${TAVILY_API_KEY:-}" ]]; then
-  echo "TAVILY_API_KEY is configured. Tavily will be used first."
-else
-  echo "当前未配置 TAVILY_API_KEY"
-  echo "可以去 https://app.tavily.com/home 获取"
-  echo "请先由 agent 询问用户是否现在提供 key。"
-  echo "如果用户跳过，再回退到 DuckDuckGo。"
-fi
+report_key_status "EXA_API_KEY" "Exa" "https://dashboard.exa.ai/api-keys"
+report_key_status "TAVILY_API_KEY" "Tavily" "https://app.tavily.com/home"
+echo "Search priority: Exa -> Tavily -> DuckDuckGo"
+echo "For research tasks, collect from all three providers when possible."
 
 ensure_curl
 ensure_duckduckgo_search
