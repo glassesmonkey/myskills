@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,9 +10,21 @@ def build_run_id(now: datetime) -> str:
     return f"wb-{now.strftime('%Y%m%d-%H%M%S')}"
 
 
+def default_base_dir() -> Path:
+    override = os.environ.get('WEB_BACKLINKER_BASE_DIR')
+    if override:
+        return Path(override).expanduser()
+
+    script_path = Path(__file__).resolve()
+    if len(script_path.parents) >= 4 and script_path.parents[2].name == 'skills':
+        return script_path.parents[3] / 'data' / 'web-backlinker'
+
+    return Path('data') / 'web-backlinker'
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='Create Web Backlinker runtime directories and manifest.')
-    parser.add_argument('--base-dir', default='/home/gc/.openclaw/workspace/data/web-backlinker')
+    parser.add_argument('--base-dir', default=str(default_base_dir()))
     parser.add_argument('--run-id', default='')
     parser.add_argument('--campaign-name', default='')
     parser.add_argument('--sheet-url', default='')

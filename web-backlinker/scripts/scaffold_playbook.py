@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,9 +13,21 @@ def slugify(value: str) -> str:
     return value or 'playbook'
 
 
+def default_base_dir() -> Path:
+    override = os.environ.get('WEB_BACKLINKER_BASE_DIR')
+    if override:
+        return Path(override).expanduser() / 'playbooks'
+
+    script_path = Path(__file__).resolve()
+    if len(script_path.parents) >= 4 and script_path.parents[2].name == 'skills':
+        return script_path.parents[3] / 'data' / 'web-backlinker' / 'playbooks'
+
+    return Path('data') / 'web-backlinker' / 'playbooks'
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='Create a Web Backlinker playbook stub.')
-    parser.add_argument('--base-dir', default='/home/gc/.openclaw/workspace/data/web-backlinker/playbooks')
+    parser.add_argument('--base-dir', default=str(default_base_dir()))
     parser.add_argument('--scope', choices=['site', 'pattern'], required=True)
     parser.add_argument('--name', required=True, help='Domain for site scope or family name for pattern scope')
     parser.add_argument('--site-type', default='unknown')
