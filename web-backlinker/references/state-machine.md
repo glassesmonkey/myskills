@@ -31,6 +31,7 @@
 ## Run states
 
 - `BOOTSTRAPPED`
+- `WAITING_CONFIG`
 - `SHEET_CREATED`
 - `IMPORTED`
 - `SCOUTING`
@@ -42,6 +43,8 @@
 ## Task phases
 
 Use a lightweight phase string to indicate where the worker is inside a long task, for example:
+- `config.collect`
+- `config.normalize`
 - `scout.homepage`
 - `scout.submit-path`
 - `signup.start`
@@ -106,6 +109,7 @@ Prefer one of:
 - `suspicious_site`
 - `oauth_scope_review`
 - `manual_content_needed`
+- `missing_config`
 - `unknown_flow`
 - `login_failed`
 
@@ -117,3 +121,5 @@ Prefer one of:
 - `READY_SEMI` should still be attempted if it stays within v1 safety rules.
 - A task may be long-lived, but it must emit progress checkpoints regularly.
 - Watchdog should mark a task `STALLED` only when the task has exceeded the no-progress threshold, not merely because the total task runtime is long.
+- `WAITING_CONFIG` is run-level: it means setup is incomplete, not that a single row failed.
+- While the run is `WAITING_CONFIG`, workers may do setup and light scouting but must not perform external-write steps such as signup, submission, ownership claim, or verification.

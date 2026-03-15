@@ -4,17 +4,21 @@
 
 Build a factual, reusable profile for the promoted site before writing submissions or proposing article angles.
 
+Read `references/init-intake.md` first when setting up a new run or when a running campaign keeps stalling on missing company facts, emails, or policy choices.
+
 ## Source order
 
 Prefer sources in this order:
 1. explicit user instructions
-2. official homepage / landing page
-3. pricing / feature / docs / about pages
-4. existing project research documents provided by the user
-5. only then infer cautiously from the site itself
+2. approved init-intake answers
+3. official homepage / landing page
+4. pricing / feature / docs / about pages
+5. existing project research documents provided by the user
+6. only then infer cautiously from the site itself
 
-## Required fields
+## Profile sections
 
+### Required marketing/content fields
 - `product_name`
 - `canonical_url`
 - `category_primary`
@@ -33,12 +37,50 @@ Prefer sources in this order:
 - `community_angles`
 - `article_angles`
 
+### Required submission-ops fields
+Persist these too when available from init intake:
+- `company_name`
+- `based_in_city`
+- `based_in_region`
+- `based_in_country`
+- `founded_year`
+- `launch_date`
+- `team_size`
+- `funding_status`
+- `revenue_stage`
+- `mrr_disclosure`
+- `submitter_name`
+- `submitter_first_name`
+- `submitter_last_name`
+- `submitter_phone`
+- `primary_email`
+- `company_email`
+- `personal_fallback_email`
+- `founder_name`
+- `markets`
+
+### Required policy fields
+Capture boundaries that affect automation decisions:
+- `allow_gmail_signup`
+- `allow_company_email_signup`
+- `preferred_verification_email`
+- `allow_mrr_disclosure`
+- `allow_founder_identity_disclosure`
+- `allow_phone_address_disclosure`
+- `allow_oauth_login`
+- `allow_manual_browser`
+- `allow_paid_listing`
+- `allow_reciprocal_backlink`
+
 ## Claim-safe rules
 
 - Do not invent unsupported features.
 - Keep claims tied to visible evidence or explicit user confirmation.
 - Keep a `not_supported` list to avoid drift.
 - If a capability is uncertain, flag it instead of writing through uncertainty.
+- Do not conflate funding status with revenue stage.
+- Do not infer MRR disclosure permission from the existence of revenue.
+- Prefer normalized values for execution, but retain the user's raw wording when that nuance may matter later.
 
 ## Output usage
 
@@ -48,6 +90,7 @@ Use:
 - `short_description`
 - `category_primary`
 - `canonical_url` or campaign UTM URL
+- any required ops fields such as location, founded year, team size, and submitter identity
 
 ### Community introductions
 Use:
@@ -61,7 +104,13 @@ Use:
 - `safe_claims`
 - `differentiators`
 
+### Signup / verification flows
+Use:
+- the preferred email hierarchy from the profile
+- the disclosure-policy fields before submitting phone, founder identity, revenue, or OAuth scopes
+
 ## Persistence
 
 Store the full profile locally under `data/web-backlinker/product-profiles/`.
 Mirror a human-readable summary into the `ProductProfile` tab.
+If the run is still `WAITING_CONFIG`, persist the partial profile anyway so later updates become additive instead of re-discovery work.
