@@ -95,7 +95,12 @@ Use this skill to turn a backlink target list into a non-blocking, sheet-driven 
    - Summary/watchdog runs should inspect progress, report status, reclaim stale leases/tasks, and only trigger recovery when work is actually stuck.
    - Heartbeat is only for watch-dogging or reminders; do not use heartbeat as the primary execution engine.
 
-11. Learn after every meaningful result.
+12. Use model tiering on purpose.
+   - Keep the high-reasoning model on deep-submit, duplicate-sensitive, and truth-sensitive execution work.
+   - Use a cheaper model for watchdog snapshots, summary/note compression, and first-layer triage of obvious blockers or scope mismatches.
+   - Do not let the cheap model perform authenticated submissions, nuanced duplicate decisions, or free-form product-claim writing.
+
+13. Learn after every meaningful result.
    - On success, create or update a site playbook locally.
    - When multiple similar sites succeed, promote them into a pattern playbook.
    - When a run stalls because setup info was missing, improve the intake checklist instead of relying on repeated ad-hoc questioning.
