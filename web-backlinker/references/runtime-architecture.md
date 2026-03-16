@@ -4,19 +4,24 @@
 
 Web Backlinker should not rely on one giant uninterrupted chat turn to process a whole target list. Browser work, signup flows, and email verification are too fragile for that model.
 
-Use a recoverable runtime architecture instead.
+It also should not pay the full context cost for every single row. Use a recoverable runtime architecture that keeps durable local state, a compact handoff brief, and a small-batch worker loop instead.
 
 ## Core design
 
-### 1. Single-URL worker
-A worker should process exactly one target URL per run.
+### 1. Small-batch drain worker
+A worker should process a **small batch** of target URLs per run, not the whole sheet and not exactly one row forever.
+
+Recommended v1 limits:
+- up to **3 rows** per worker run
+- at most **1 deep submit** path in that run
+- the other slots should stay lightweight scout / classify / quick-park work
 
 The worker may:
-- scout the site
+- scout a site
 - continue an existing signup flow
 - continue email verification
 - continue a submission flow
-- finish the task in a terminal state
+- finish one or more rows in terminal or holding states
 
 The worker should not try to finish the whole batch.
 
@@ -27,8 +32,10 @@ Recommended location:
 
 ```text
 data/web-backlinker/tasks/
-  current-run.json
-  events.jsonl
+  <run-id>-current-run.json
+  <run-id>-events.jsonl
+  <run-id>-current-run-lease.json
+  <run-id>-worker-brief.json
 ```
 
 A task entry should include at least:
@@ -41,23 +48,60 @@ A task entry should include at least:
 - `strategy`
 - `attempts`
 - `last_error`
+- `reason_code`
+- `route`
+- `artifact_ref`
+- `sheet_status`
 - `last_progress_at`
 - `updated_at`
 - `locked_by`
 - `lock_expires_at`
 - `playbook_id`
-- `notes`
+- `notes` (trimmed recent notes only)
 
-### 3. Watchdog / summary separation
+### 3. Batch lease
+Do not rely on row locks alone when the batch can be triggered repeatedly.
+
+Use a **batch lease** to ensure only one worker is draining the batch at a time.
+
+Recommended lease fields:
+- `run_id`
+- `owner_worker`
+- `started_at`
+- `heartbeat_at`
+- `expires_at`
+- `processed_count`
+- `last_task_id`
+- `state`
+
+Rules:
+- worker acquires the lease before claiming rows
+- worker heartbeats the lease after each completed row or major checkpoint
+- worker releases the lease on normal exit
+- watchdog reclaims expired leases when the owner is gone
+
+### 4. Compact worker brief
+Do not make every worker reread the full manifest, full product profile, and long event history.
+
+Generate a compact `worker-brief.json` before execution. It should contain only:
+- run summary and current counts
+- top candidate rows for this worker run
+- compact product profile fields needed for truthful submission
+- a few recent events
+- hard rules
+
+This brief is the default entry point for the worker.
+
+### 5. Watchdog / summary separation
 Do not make the periodic monitor perform the entire browser workflow.
 
 Instead:
-- watchdog checks if work is progressing
-- watchdog triggers or resumes a worker if needed
-- watchdog posts summary updates
+- watchdog checks whether work is progressing
+- watchdog reclaims stale leases/tasks when needed
+- watchdog posts or stores summary updates
 - worker does the actual target-specific work
 
-### 4. Heartbeat role
+### 6. Heartbeat role
 Heartbeat is for checking whether the system is alive or whether a reminder should be sent. It is not the primary execution engine.
 
 Use heartbeat for:
@@ -67,52 +111,53 @@ Use heartbeat for:
 
 Do not use heartbeat as the only place where submissions actually happen.
 
-### 5. Browser evolution path
-
-Short term:
-- use Browser Relay for Google OAuth and rescue flows
-- use built-in browser control for public scouting
-
-Medium term:
-- prefer a managed OpenClaw browser profile for unattended execution
-
-Long term:
-- avoid making an extension-attached tab the only way a batch can continue
-
 ## Time budget model
-
-Do not use a tiny hard timeout for the total task. A single URL can legitimately take 10-20 minutes.
 
 Use two clocks:
 
-### Total task timeout
+### Total worker timeout
 Recommended:
 - `900-1200s`
 
 Purpose:
-- upper bound for one URL worker run
+- upper bound for one small-batch worker run
+
+### Per-row budget
+Recommended:
+- fast scout / quick-park row: `120-180s`
+- deep submit row: `300-420s`
+
+Purpose:
+- stop one difficult row from eating the whole worker budget
 
 ### Progress checkpoint expectation
 Recommended:
 - every `60-120s`
 
 Purpose:
-- worker should write a meaningful checkpoint regularly
+- worker should write meaningful progress regularly
 
 ### Stalled threshold
 Recommended:
 - `300s` without progress means “likely stalled”
 
 Purpose:
-- watchdog decides whether to recover/retry
+- watchdog decides whether to recover or retry
 
 ## Recovery logic
 
-If a task is `RUNNING` but has no progress beyond the stalled threshold:
+If a task is `RUNNING` or `SCOUTING` but has no progress beyond the stalled threshold:
 1. mark it as stalled/recoverable
-2. record the last known phase
+2. record the last known phase and reason code
 3. requeue or retry it with attempt count incremented
 4. continue with another executable task if appropriate
+
+If a lease is still active and healthy:
+- do not start another draining worker for the same run
+
+If the lease is expired and backlog remains:
+- reclaim the lease
+- start one new worker
 
 If a task failed because of site-side error:
 - keep artifact evidence
@@ -121,27 +166,39 @@ If a task failed because of site-side error:
 
 ## Recommended worker loop
 
-1. claim next executable task
-2. write `RUNNING` + lock info
-3. checkpoint phase start
-4. do one target’s scouting/execution work
-5. checkpoint meaningful progress after each phase
-6. write terminal state or holding state
-7. release lock
-8. exit
+1. acquire batch lease
+2. read `worker-brief.json`
+3. claim next executable row
+4. checkpoint phase start
+5. do one row’s scouting/execution work
+6. write terminal or holding state
+7. heartbeat lease
+8. repeat until one of these is true:
+   - 3 rows processed
+   - 1 deep submit already consumed and budget is nearly spent
+   - total worker budget reached
+   - no executable rows remain
+9. batch-sync external surfaces (for example Sheet) once near the end of the run
+10. refresh compact manifest summary
+11. release lease
+12. exit
 
 ## Recommended watchdog loop
 
-1. read task store + latest summary artifacts
+1. read task store + lease + compact manifest
 2. count done/failed/pending/running/stalled
-3. if no progress within threshold, trigger or resume one worker
-4. write a concise summary
-5. exit
+3. if lease is expired and backlog remains, trigger one worker
+4. if a row is stale beyond the threshold, mark it `STALLED` / `RETRYABLE`
+5. write a concise summary
+6. exit
 
 ## Anti-patterns to avoid
 
 - one cron job doing full-batch execution + monitoring + reporting
+- forcing each worker to reread the full manifest note history
 - relying on chat memory as the queue
 - treating `exec/process` memory as durable state
 - assuming “no error message” means the task is still progressing
 - letting a failed target pause the whole batch
+- launching concurrent workers for the same run without a lease
+- spending the whole worker budget on a CAPTCHA or Cloudflare row

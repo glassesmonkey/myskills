@@ -40,6 +40,24 @@
 - `HALTED`
 - `COMPLETED`
 
+## Lease states
+
+- `ACTIVE` — one worker currently owns the batch drain lease
+- `RELEASED` — no active owner
+- `EXPIRED` — logical state used by watchdog when the stored `expires_at` is already in the past
+
+## Task metadata fields
+
+Prefer compact machine-friendly fields alongside human notes:
+- `reason_code`
+- `route`
+- `artifact_ref`
+- `sheet_status`
+- `sheet_note`
+- `result_code`
+
+Use short code-first values in the durable state. Expand into human prose only when reporting outward.
+
 ## Task phases
 
 Use a lightweight phase string to indicate where the worker is inside a long task, for example:
@@ -56,7 +74,7 @@ Use a lightweight phase string to indicate where the worker is inside a long tas
 - `submit.final`
 - `postsubmit.review`
 
-A task may remain validly active for 10-20 minutes, but it should still checkpoint phase progress every 60-120 seconds.
+A worker run may process up to 3 rows, but each active row should still checkpoint phase progress every 60-120 seconds.
 
 ## Allowed row transitions
 
@@ -102,6 +120,7 @@ A task may remain validly active for 10-20 minutes, but it should still checkpoi
 
 Prefer one of:
 - `captcha`
+- `captcha_required`
 - `cloudflare_challenge`
 - `payment_required`
 - `backlink_required`
@@ -112,6 +131,8 @@ Prefer one of:
 - `missing_config`
 - `unknown_flow`
 - `login_failed`
+- `site_error`
+- `scope_mismatch`
 
 ## Transition rules
 
@@ -123,3 +144,5 @@ Prefer one of:
 - Watchdog should mark a task `STALLED` only when the task has exceeded the no-progress threshold, not merely because the total task runtime is long.
 - `WAITING_CONFIG` is run-level: it means setup is incomplete, not that a single row failed.
 - While the run is `WAITING_CONFIG`, workers may do setup and light scouting but must not perform external-write steps such as signup, submission, ownership claim, or verification.
+- The batch lease protects the run-level drain loop; row locks still protect per-row ownership.
+- Prefer compact `recent_notes` in the run manifest over an ever-growing `notes` history. Full detail belongs in `events.jsonl` and artifacts.

@@ -1,6 +1,6 @@
 ---
 name: web-backlinker
-description: Standardize semi-automated backlink operations for a txt list of target URLs. Use when OpenClaw needs to (1) create a Google Sheet control panel for backlink runs, (2) scout and classify directory/community/article-platform targets, (3) execute backlink work as resumable single-URL tasks instead of one giant batch run, (4) persist local task state, playbooks, and artifacts for recovery, or (5) collect/init a reusable promoted-site submission profile before backlink execution so later rows do not stall on missing company facts, emails, or policy choices.
+description: Standardize semi-automated backlink operations for a txt list of target URLs. Use when OpenClaw needs to (1) create a Google Sheet control panel for backlink runs, (2) scout and classify directory/community/article-platform targets, (3) execute backlink work as resumable small-batch drain workers (up to 3 URLs per run) instead of one giant batch run, (4) persist local task state, playbooks, leases, manifests, and artifacts for recovery, or (5) collect/init a reusable promoted-site submission profile before backlink execution so later rows do not stall on missing company facts, emails, or policy choices.
 ---
 
 # Web Backlinker
@@ -22,7 +22,7 @@ Use this skill to turn a backlink target list into a non-blocking, sheet-driven 
 
 - `references/init-intake.md` — required initialization fields, policy boundaries, normalization rules, and `WAITING_CONFIG` gating
 - `references/design.md` — overall architecture, object model, workflow, v1/v2 scope
-- `references/runtime-architecture.md` — single-URL worker model, watchdog design, time budgets, recovery rules
+- `references/runtime-architecture.md` — small-batch drain worker model, batch lease, worker brief, watchdog design, time budgets, and recovery rules
 - `references/sheet-schema.md` — required tabs, columns, and write policy
 - `references/state-machine.md` — row, task, and run states plus transition rules
 - `references/strategy-rules.md` — site classification, route selection, and browser choice
@@ -71,21 +71,28 @@ Use this skill to turn a backlink target list into a non-blocking, sheet-driven 
    - Escalate to Browser Relay for Google OAuth, authenticated flows, and pages that depend on a real session.
    - Persist scouting results into both Sheet and local task state.
 
-8. Execute as single-URL workers.
-   - Do not ask one worker to process the whole batch.
-   - Claim one executable task from the local task store.
-   - Run only that task until it reaches a checkpointed terminal/holding state.
-   - Persist progress after each meaningful phase change.
+8. Prepare a compact worker brief before execution.
+   - Generate a `worker-brief.json` with `scripts/prepare_worker_brief.py`.
+   - Put only the current counts, top candidate rows, compact product profile, and a few recent events into the brief.
+   - Do not make each worker reread the whole manifest, event log, and profile history.
 
-9. Keep the batch non-blocking.
+9. Execute as small-batch drain workers.
+   - Do not ask one worker to process the whole batch.
+   - Acquire the batch lease before claiming rows.
+   - Process up to 3 executable tasks in one run, but allow at most 1 deep submit path.
+   - Treat the other slots as fast scout / fast park work.
+   - Keep a total worker budget of roughly 15 minutes and checkpoint after each meaningful phase change.
+
+10. Keep the batch non-blocking.
    - On CAPTCHA, Cloudflare challenge, payment walls, reciprocal backlink requirements, phone verification, suspicious flows, or manual-content requirements:
      - update the current row and local task state
      - emit the fixed `[WB-ROW]` line
-     - continue with another task in a later worker run
+     - park the row quickly instead of burning the whole worker budget
+     - continue with another task in the same worker run when safe
 
-10. Separate worker execution from summary/watchdog reporting.
-   - Worker runs should focus on one target URL and local/sheet state updates.
-   - Summary/watchdog runs should inspect progress, report status, and only trigger recovery when tasks are stalled.
+11. Separate worker execution from summary/watchdog reporting.
+   - Worker runs should focus on the selected small batch plus local state updates.
+   - Summary/watchdog runs should inspect progress, report status, reclaim stale leases/tasks, and only trigger recovery when work is actually stuck.
    - Heartbeat is only for watch-dogging or reminders; do not use heartbeat as the primary execution engine.
 
 11. Learn after every meaningful result.
@@ -128,4 +135,6 @@ Use this skill to turn a backlink target list into a non-blocking, sheet-driven 
 - `scripts/normalize_targets.py` — normalize/dedupe txt inputs into structured rows
 - `scripts/render_status.py` — render fixed `[WB-*]` status lines
 - `scripts/scaffold_playbook.py` — create a site/pattern playbook stub in local storage
-- `scripts/task_store.py` — initialize, claim, checkpoint, finish, and summarize single-URL tasks in local state
+- `scripts/task_store.py` — initialize, claim, checkpoint, finish, summarize tasks, select next candidates, and manage the batch lease
+- `scripts/prepare_worker_brief.py` — generate a compact `worker-brief.json` so each worker reads only the top candidates and minimal profile context
+- `scripts/update_run_manifest.py` — refresh the compact run manifest summary, counts, and recent notes without keeping an ever-growing note history

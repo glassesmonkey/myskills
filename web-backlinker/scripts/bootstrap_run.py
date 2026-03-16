@@ -47,6 +47,10 @@ def main() -> int:
     for sub in ['screenshots', 'html', 'notes']:
         (artifacts_dir / sub).mkdir(parents=True, exist_ok=True)
 
+    tasks_dir = base_dir / 'tasks'
+    brief_path = tasks_dir / f'{run_id}-worker-brief.json'
+    lease_path = tasks_dir / f'{run_id}-current-run-lease.json'
+
     manifest = {
         'run_id': run_id,
         'created_at': now.isoformat(),
@@ -59,6 +63,13 @@ def main() -> int:
         'playbooks_sites_dir': str(playbooks_sites_dir),
         'playbooks_patterns_dir': str(playbooks_patterns_dir),
         'product_profiles_dir': str(profiles_dir),
+        'task_store_path': '',
+        'worker_brief_path': str(brief_path),
+        'lease_path': str(lease_path),
+        'counts_local': {},
+        'counts_sheet': {},
+        'recent_notes': [],
+        'summary': '',
         'state': 'BOOTSTRAPPED',
     }
 
