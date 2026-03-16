@@ -111,15 +111,6 @@ Use heartbeat for:
 
 Do not use heartbeat as the only place where submissions actually happen.
 
-### 7. Model tiering
-Use different model tiers for different kinds of work.
-
-Recommended split:
-- **Cheap model**: watchdog, manifest/summary note compression, first-layer triage of obvious blockers, scope mismatches, and known playbook-backed failures.
-- **Strong model**: deep submit flows, duplicate-sensitive decisions, nuanced route selection, and any step where incorrect product claims or unsafe external writes would be costly.
-
-The cheap model should only classify, compress, or park work. It should not perform authenticated submissions or improvise product facts.
-
 ## Time budget model
 
 Use two clocks:
@@ -208,10 +199,6 @@ If a task failed because of site-side error:
 - relying on chat memory as the queue
 - treating `exec/process` memory as durable state
 - assuming “no error message” means the task is still progressing
-- letting a failed target pause the whole batch
-- launching concurrent workers for the same run without a lease
-- spending the whole worker budget on a CAPTCHA or Cloudflare row
-no error message” means the task is still progressing
 - letting a failed target pause the whole batch
 - launching concurrent workers for the same run without a lease
 - spending the whole worker budget on a CAPTCHA or Cloudflare row

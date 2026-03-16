@@ -95,18 +95,13 @@ Use this skill to turn a backlink target list into a non-blocking, sheet-driven 
    - Summary/watchdog runs should inspect progress, report status, reclaim stale leases/tasks, and only trigger recovery when work is actually stuck.
    - Heartbeat is only for watch-dogging or reminders; do not use heartbeat as the primary execution engine.
 
-12. Use model tiering on purpose.
-   - Keep the high-reasoning model on deep-submit, duplicate-sensitive, and truth-sensitive execution work.
-   - Use a cheaper model for watchdog snapshots, summary/note compression, and first-layer triage of obvious blockers or scope mismatches.
-   - Do not let the cheap model perform authenticated submissions, nuanced duplicate decisions, or free-form product-claim writing.
-
-13. Learn after every meaningful result.
+12. Learn after every meaningful result.
    - On success, create or update a site playbook locally.
    - When multiple similar sites succeed, promote them into a pattern playbook.
    - When a run stalls because setup info was missing, improve the intake checklist instead of relying on repeated ad-hoc questioning.
    - Do not let the skill rewrite its own core rules; learn as data, not as autonomous policy changes.
 
-12. Finish cleanly.
+13. Finish cleanly.
    - Emit `[WB-SUMMARY]` at the end of a summary/watchdog cycle.
    - Emit `[WB-HALT]` only for infrastructure-wide failures that make continuing unsafe or impossible.
 
@@ -141,5 +136,8 @@ Use this skill to turn a backlink target list into a non-blocking, sheet-driven 
 - `scripts/render_status.py` — render fixed `[WB-*]` status lines
 - `scripts/scaffold_playbook.py` — create a site/pattern playbook stub in local storage
 - `scripts/task_store.py` — initialize, claim, checkpoint, finish, summarize tasks, select next candidates, and manage the batch lease
+- `scripts/prepare_worker_brief.py` — generate a compact `worker-brief.json` so each worker reads only the top candidates and minimal profile context
+- `scripts/update_run_manifest.py` — refresh the compact run manifest summary, counts, and recent notes without keeping an ever-growing note history
+— initialize, claim, checkpoint, finish, summarize tasks, select next candidates, and manage the batch lease
 - `scripts/prepare_worker_brief.py` — generate a compact `worker-brief.json` so each worker reads only the top candidates and minimal profile context
 - `scripts/update_run_manifest.py` — refresh the compact run manifest summary, counts, and recent notes without keeping an ever-growing note history
