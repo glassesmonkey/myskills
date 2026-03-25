@@ -10,7 +10,7 @@ ensure_curl() {
     echo "curl is available."
   else
     echo "curl is required for Baidu, Exa, and Tavily requests but was not found in PATH."
-    echo "Install curl or adjust PATH before using this skill."
+    echo "Install curl or adjust PATH before using this discovery skill."
   fi
 }
 
@@ -69,7 +69,7 @@ PY
   fi
 }
 
-echo "Checking web-search environment..."
+echo "Checking web-discovery environment..."
 
 report_baidu_key_status
 report_key_status "EXA_API_KEY" "Exa" "https://dashboard.exa.ai/api-keys"

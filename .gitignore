@@ -12,8 +12,8 @@
 !web-cafe-daily-report/**
 !web-reader/
 !web-reader/**
-!web-search/
-!web-search/**
+!web-discovery/
+!web-discovery/**
 !wechat-mp-article-list/
 !wechat-mp-article-list/**
 !model-news-hn-monitor/
@@ -22,7 +22,7 @@
 # Vendored dependencies stay local and should not be tracked.
 web-reader/.DS_Store
 web-reader/vendor/
-web-search/vendor/
+web-discovery/vendor/
 web-access/vendor/
 
 # Python generated files should not be versioned.

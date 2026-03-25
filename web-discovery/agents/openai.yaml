@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web Discovery"
+  short_description: "Baidu-first for China-related queries, Exa-first otherwise, with Tavily and DDG fallback"
+  default_prompt: "Use $web-discovery to discover candidate webpages and sources. For China-related content, prefer Baidu AppBuilder search first when configured; otherwise prefer Exa, then Tavily, and fall back to DuckDuckGo when needed. For deep research, cross-check all available providers."

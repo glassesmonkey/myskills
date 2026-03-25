@@ -12,7 +12,7 @@
 ## OpenClaw routing rules
 
 ### 1. Source discovery
-Use `web_search` when you need to find candidate sources, official pages, or competing references.
+Default to the workspace `web-discovery` skill when you need to find candidate sources, official pages, or competing references. Use the built-in `web_search` tool only as a fallback or when the skill is unavailable.
 
 ### 2. Public-page reading
 Default to **`web-reader`** when:

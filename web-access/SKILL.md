@@ -67,7 +67,7 @@ metadata:
 - 需要找官网、原始出处、相关新闻、文档入口
 
 优先能力：
-- OpenClaw 的搜索能力 / 已安装 `web-search` skill
+- 已安装 `web-discovery` skill（需要搜索发现时优先）
 - 必要时浏览器内站内搜索
 
 原则：

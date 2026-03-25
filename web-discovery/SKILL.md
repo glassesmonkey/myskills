@@ -1,9 +1,9 @@
 ---
-name: web-search
-description: "Search the public web for up-to-date information and discover relevant pages. Use when Codex needs to look up topics, news, documentation, blog posts, or source pages on the internet and does not already have the target page. Prefer Baidu AppBuilder search for China-related topics when `BAIDU_SEARCH_API_KEY` or `APPBUILDER_API_KEY` is configured; otherwise prefer Exa first, Tavily second, and only fall back to DuckDuckGo when paid providers are unavailable or skipped. Before searching, check the relevant provider keys before searching. In deeper research or credibility-sensitive tasks, use all available providers together to cross-check coverage before summarizing. If the target URL is already known, or the task is primarily to read/extract page content, do not start with search; prefer `web-reader` or direct web access first."
+name: web-discovery
+description: "Discover relevant public webpages and source candidates on the open web. Use when Codex needs to look up topics, news, documentation, blog posts, or source pages on the internet and does not already have the target page. Prefer Baidu AppBuilder search for China-related topics when `BAIDU_SEARCH_API_KEY` or `APPBUILDER_API_KEY` is configured; otherwise prefer Exa first, Tavily second, and only fall back to DuckDuckGo when paid providers are unavailable or skipped. Before searching, check the relevant provider keys before searching. In deeper research or credibility-sensitive tasks, use all available providers together to cross-check coverage before summarizing. If the target URL is already known and the task is primarily to read/extract page content, do not start with search; prefer `web-reader`, and upgrade to `web-access` once the task goes beyond pure reading."
 ---
 
-# Web Search
+# Web Discovery
 
 Search the web with query-aware routing:
 

@@ -359,7 +359,7 @@ def run_standard_search(
         except RuntimeError as error:
             last_error = error
             print(
-                f"[web-search] {provider_name} unavailable, trying next provider: {error}",
+                f"[web-discovery] {provider_name} unavailable, trying next provider: {error}",
                 file=sys.stderr,
             )
 
@@ -389,7 +389,7 @@ def run_research_search(
                 }
             )
             print(
-                f"[web-search] {provider_name} unavailable during research collection: {error}",
+                f"[web-discovery] {provider_name} unavailable during research collection: {error}",
                 file=sys.stderr,
             )
 
@@ -418,7 +418,7 @@ def main() -> int:
         else:
             payload = run_standard_search(args.query, args.max_results, args.topic)
     except RuntimeError as search_error:
-        print(f"[web-search] Search failed: {search_error}", file=sys.stderr)
+        print(f"[web-discovery] Search failed: {search_error}", file=sys.stderr)
         return 1
 
     json.dump(payload, sys.stdout, ensure_ascii=False, indent=2)
