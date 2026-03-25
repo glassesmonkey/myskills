@@ -23,6 +23,7 @@
 web-reader/.DS_Store
 web-reader/vendor/
 web-search/vendor/
+web-access/vendor/
 
 # Python generated files should not be versioned.
 **/__pycache__/
