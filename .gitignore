@@ -1,13 +1,23 @@
 *
 !.gitignore
+!skill-vetter/
+!skill-vetter/**
+!task-runtime/
+!task-runtime/**
+!web-access/
+!web-access/**
+!web-backlinker/
+!web-backlinker/**
+!web-cafe-daily-report/
+!web-cafe-daily-report/**
 !web-reader/
 !web-reader/**
 !web-search/
 !web-search/**
 !wechat-mp-article-list/
 !wechat-mp-article-list/**
-!web-backlinker/
-!web-backlinker/**
+!model-news-hn-monitor/
+!model-news-hn-monitor/**
 
 # Vendored dependencies stay local and should not be tracked.
 web-reader/.DS_Store

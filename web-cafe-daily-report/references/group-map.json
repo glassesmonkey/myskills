@@ -1,0 +1,158 @@
+﻿[
+    {
+        "index":  1,
+        "text":  "哥飞的朋友们 1 群\n\n哥飞的朋友们",
+        "roomId":  "45416093717@chatroom",
+        "reqBody":  {
+                        "room_id":  "45416093717@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  2,
+        "text":  "哥飞的朋友们 2 群\n\n哥飞的朋友们VIP群",
+        "roomId":  "48059279236@chatroom",
+        "reqBody":  {
+                        "room_id":  "48059279236@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  3,
+        "text":  "哥飞的朋友们 3 群\n\n哥飞的朋友们SVIP群",
+        "roomId":  "45913286525@chatroom",
+        "reqBody":  {
+                        "room_id":  "45913286525@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  4,
+        "text":  "哥飞的朋友们 4 群\n\n哥飞的朋友们SSVIP群",
+        "roomId":  "45882095689@chatroom",
+        "reqBody":  {
+                        "room_id":  "45882095689@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  5,
+        "text":  "哥飞的朋友们 5 群\n\n哥飞的朋友们⑤",
+        "roomId":  "44960325474@chatroom",
+        "reqBody":  {
+                        "room_id":  "44960325474@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  6,
+        "text":  "哥飞的朋友们 6 群\n\n哥飞的朋友们⑥",
+        "roomId":  "43633621082@chatroom",
+        "reqBody":  {
+                        "room_id":  "43633621082@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  7,
+        "text":  "哥飞的朋友们 7 群\n\n哥飞的朋友们⑦",
+        "roomId":  "44544837542@chatroom",
+        "reqBody":  {
+                        "room_id":  "44544837542@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  8,
+        "text":  "哥飞的朋友们 8 群\n\n哥飞的朋友们⑧",
+        "roomId":  "47317110955@chatroom",
+        "reqBody":  {
+                        "room_id":  "47317110955@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  9,
+        "text":  "哥飞的朋友们 9 群\n\n哥飞的朋友们⑨",
+        "roomId":  "48202310567@chatroom",
+        "reqBody":  {
+                        "room_id":  "48202310567@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  10,
+        "text":  "哥飞的朋友们 10 群\n\n哥飞的朋友们⑩",
+        "roomId":  "43085642626@chatroom",
+        "reqBody":  {
+                        "room_id":  "43085642626@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  11,
+        "text":  "哥飞的朋友们 11 群\n\n哥飞的朋友们⑪",
+        "roomId":  "43272449178@chatroom",
+        "reqBody":  {
+                        "room_id":  "43272449178@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    },
+    {
+        "index":  12,
+        "text":  "哥飞的朋友们 12 群\n\n哥飞的朋友们⑫",
+        "roomId":  "45944534156@chatroom",
+        "reqBody":  {
+                        "room_id":  "45944534156@chatroom",
+                        "wechat_wxid":  "AIGCAIXY",
+                        "email":  "alexfefun@gmail.com"
+                    },
+        "firstMessageAt":  null,
+        "preview":  null,
+        "logCount":  1
+    }
+]
