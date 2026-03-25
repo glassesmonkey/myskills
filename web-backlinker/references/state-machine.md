@@ -51,12 +51,47 @@
 Prefer compact machine-friendly fields alongside human notes:
 - `reason_code`
 - `route`
+- `execution_mode`
+- `automation_disposition`
+- `playbook_confidence`
+- `replay_status`
+- `account_ref`
+- `credential_ref`
 - `artifact_ref`
 - `sheet_status`
 - `sheet_note`
 - `result_code`
 
+Useful `reason_code` examples include `already_submitted`, `captcha_required`, `cloudflare_challenge`, `payment_required`, and `manual_content_needed`.
+
 Use short code-first values in the durable state. Expand into human prose only when reporting outward.
+
+## Automation disposition values
+
+These are not replacements for task states. They describe execution intent:
+- `AUTO_EXECUTE`
+- `ASSISTED_EXECUTE`
+- `DEFER_RETRY`
+- `REJECT`
+
+## Execution mode values
+
+Use one of:
+- `native_scout`
+- `native_submit`
+- `browser_use_direct_observe`
+- `browser_use_direct`
+- `relay_auth`
+- `manual`
+
+## Replay status values
+
+Use one of:
+- `not_compiled`
+- `compiled`
+- `observe`
+- `validated`
+- `invalidated`
 
 ## Task phases
 
@@ -73,6 +108,8 @@ Use a lightweight phase string to indicate where the worker is inside a long tas
 - `submit.upload`
 - `submit.final`
 - `postsubmit.review`
+- `playbook.compile`
+- `playbook.replay-validate`
 
 A worker run may process up to 3 rows, but each active row should still checkpoint phase progress every 60-120 seconds.
 
@@ -83,6 +120,7 @@ A worker run may process up to 3 rows, but each active row should still checkpoi
 - `SCOUTED -> READY_SEMI`
 - `SCOUTED -> NEEDS_HUMAN`
 - `SCOUTED -> SKIPPED`
+- `IMPORTED -> SKIPPED` when a cross-run submission-ledger match proves the promoted site was already submitted/listed on that target
 - `READY_AUTO -> RUNNING`
 - `READY_SEMI -> RUNNING`
 - `RUNNING -> SUBMITTED`
@@ -133,6 +171,9 @@ Prefer one of:
 - `login_failed`
 - `site_error`
 - `scope_mismatch`
+
+Interpretation note:
+- `backlink_required` means “record for later exchange-link review”, not “auto-accept now” and not necessarily “permanent reject”. Prefer a human-review queue / assisted path.
 
 ## Transition rules
 

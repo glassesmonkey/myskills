@@ -9,7 +9,7 @@ ensure_curl() {
   if command -v curl >/dev/null 2>&1; then
     echo "curl is available."
   else
-    echo "curl is required for Exa and Tavily requests but was not found in PATH."
+    echo "curl is required for Baidu, Exa, and Tavily requests but was not found in PATH."
     echo "Install curl or adjust PATH before using this skill."
   fi
 }
@@ -24,6 +24,18 @@ report_key_status() {
   else
     echo "当前未配置 $key_name"
     echo "可以去 $dashboard_url 获取"
+    echo "请先由 agent 询问用户是否现在提供 key。"
+  fi
+}
+
+report_baidu_key_status() {
+  if [[ -n "${BAIDU_SEARCH_API_KEY:-}" ]]; then
+    echo "BAIDU_SEARCH_API_KEY is configured. Baidu AppBuilder search is available."
+  elif [[ -n "${APPBUILDER_API_KEY:-}" ]]; then
+    echo "APPBUILDER_API_KEY is configured. Baidu AppBuilder search is available."
+  else
+    echo "当前未配置 BAIDU_SEARCH_API_KEY（也可使用 APPBUILDER_API_KEY）"
+    echo "可以参考 https://ai.baidu.com/ai-doc/AppBuilder/pmaxd1hvy 获取"
     echo "请先由 agent 询问用户是否现在提供 key。"
   fi
 }
@@ -59,10 +71,12 @@ PY
 
 echo "Checking web-search environment..."
 
+report_baidu_key_status
 report_key_status "EXA_API_KEY" "Exa" "https://dashboard.exa.ai/api-keys"
 report_key_status "TAVILY_API_KEY" "Tavily" "https://app.tavily.com/home"
-echo "Search priority: Exa -> Tavily -> DuckDuckGo"
-echo "For research tasks, collect from all three providers when possible."
+echo "China-related search priority: Baidu -> Exa -> Tavily -> DuckDuckGo"
+echo "Other search priority: Exa -> Tavily -> Baidu -> DuckDuckGo"
+echo "For research tasks, collect from all available providers and compare coverage."
 
 ensure_curl
 ensure_duckduckgo_search

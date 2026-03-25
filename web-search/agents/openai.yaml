@@ -1,4 +1,4 @@
 interface:
   display_name: "Web Search"
-  short_description: "Exa-first web search with Tavily and DDG fallback"
-  default_prompt: "Use $web-search to search the web, prefer Exa, then Tavily, and fall back to DuckDuckGo when needed. For deep research, cross-check all three providers."
+  short_description: "Baidu-first for China-related queries, Exa-first otherwise, with Tavily and DDG fallback"
+  default_prompt: "Use $web-search to search the web. For China-related content, prefer Baidu AppBuilder search first when configured; otherwise prefer Exa, then Tavily, and fall back to DuckDuckGo when needed. For deep research, cross-check all available providers."

@@ -40,8 +40,12 @@ def main() -> int:
     playbooks_sites_dir = base_dir / 'playbooks' / 'sites'
     playbooks_patterns_dir = base_dir / 'playbooks' / 'patterns'
     profiles_dir = base_dir / 'product-profiles'
+    accounts_dir = base_dir / 'accounts'
+    logs_dir = base_dir / 'logs' / 'browser-use'
+    submission_ledger_path = base_dir / 'submission-ledger.json'
+    account_registry_path = accounts_dir / 'site-accounts.json'
 
-    for path in [runs_dir, artifacts_dir, playbooks_sites_dir, playbooks_patterns_dir, profiles_dir]:
+    for path in [runs_dir, artifacts_dir, playbooks_sites_dir, playbooks_patterns_dir, profiles_dir, accounts_dir, logs_dir]:
         path.mkdir(parents=True, exist_ok=True)
 
     for sub in ['screenshots', 'html', 'notes']:
@@ -63,6 +67,10 @@ def main() -> int:
         'playbooks_sites_dir': str(playbooks_sites_dir),
         'playbooks_patterns_dir': str(playbooks_patterns_dir),
         'product_profiles_dir': str(profiles_dir),
+        'accounts_dir': str(accounts_dir),
+        'account_registry_path': str(account_registry_path),
+        'logs_dir': str(logs_dir),
+        'submission_ledger_path': str(submission_ledger_path),
         'task_store_path': '',
         'worker_brief_path': str(brief_path),
         'lease_path': str(lease_path),

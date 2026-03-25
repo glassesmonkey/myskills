@@ -50,6 +50,10 @@ A task entry should include at least:
 - `last_error`
 - `reason_code`
 - `route`
+- `execution_mode`
+- `automation_disposition`
+- `playbook_confidence`
+- `replay_status`
 - `artifact_ref`
 - `sheet_status`
 - `last_progress_at`
@@ -57,6 +61,8 @@ A task entry should include at least:
 - `locked_by`
 - `lock_expires_at`
 - `playbook_id`
+- `account_ref`
+- `credential_ref`
 - `notes` (trimmed recent notes only)
 
 ### 3. Batch lease
@@ -89,10 +95,30 @@ Generate a compact `worker-brief.json` before execution. It should contain only:
 - compact product profile fields needed for truthful submission
 - a few recent events
 - hard rules
+- any already-known playbook/account metadata needed for route choice
 
 This brief is the default entry point for the worker.
 
-### 5. Watchdog / summary separation
+### 5. Dual executor model
+Do not make every row use the same browser path.
+
+Preferred worker decision model:
+- `native_scout` for first-pass discovery and low-confidence sites
+- `native_submit` for one-off or semi-automatic paths
+- `browser_use_direct_observe` for newly compiled replay paths that still need observation
+- `browser_use_direct` for stable replayable directories/listings
+- `relay_auth` for Google OAuth or real-session flows
+- `manual` when safety or policy rules require a human
+
+### 6. Compile / validate / replay separation
+Do not promote a site into a fast path immediately after one noisy success.
+
+Use a three-step lifecycle:
+1. scout the path
+2. compile a site playbook
+3. validate replay before trusting the fast path
+
+### 7. Watchdog / summary separation
 Do not make the periodic monitor perform the entire browser workflow.
 
 Instead:
@@ -101,7 +127,7 @@ Instead:
 - watchdog posts or stores summary updates
 - worker does the actual target-specific work
 
-### 6. Heartbeat role
+### 8. Heartbeat role
 Heartbeat is for checking whether the system is alive or whether a reminder should be sent. It is not the primary execution engine.
 
 Use heartbeat for:
@@ -126,6 +152,7 @@ Purpose:
 Recommended:
 - fast scout / quick-park row: `120-180s`
 - deep submit row: `300-420s`
+- fast-path replay row: `90-180s`
 
 Purpose:
 - stop one difficult row from eating the whole worker budget
@@ -170,18 +197,21 @@ If a task failed because of site-side error:
 2. read `worker-brief.json`
 3. claim next executable row
 4. checkpoint phase start
-5. do one row’s scouting/execution work
-6. write terminal or holding state
-7. heartbeat lease
-8. repeat until one of these is true:
+5. choose executor from route / confidence / playbook / account registry
+6. do one row’s scouting/execution work
+7. if a reusable path was discovered, compile/update the site playbook
+8. if a fast path was compiled, validate replay before promotion
+9. write terminal or holding state
+10. heartbeat lease
+11. repeat until one of these is true:
    - 3 rows processed
    - 1 deep submit already consumed and budget is nearly spent
    - total worker budget reached
    - no executable rows remain
-9. batch-sync external surfaces (for example Sheet) once near the end of the run
-10. refresh compact manifest summary
-11. release lease
-12. exit
+12. batch-sync external surfaces (for example Sheet) once near the end of the run
+13. refresh compact manifest summary
+14. release lease
+15. exit
 
 ## Recommended watchdog loop
 
@@ -202,3 +232,4 @@ If a task failed because of site-side error:
 - letting a failed target pause the whole batch
 - launching concurrent workers for the same run without a lease
 - spending the whole worker budget on a CAPTCHA or Cloudflare row
+- trusting a new `browser_use_direct` route without replay validation

@@ -59,6 +59,8 @@ Only move into normal execution after the required intake is filled.
 - whether Gmail signup is allowed
 - whether company-domain email signup is allowed
 - preferred company email for verification / claim flows
+- preferred auth order when multiple routes exist (default: no-auth > email signup > Google OAuth fallback)
+- whether existing site accounts may be reused across later submissions
 - whether MRR may be disclosed
 - whether founder identity may be disclosed
 - whether phone/address may be disclosed

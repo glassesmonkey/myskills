@@ -64,6 +64,8 @@ Capture boundaries that affect automation decisions:
 - `allow_gmail_signup`
 - `allow_company_email_signup`
 - `preferred_verification_email`
+- `preferred_auth_order`
+- `allow_site_account_reuse`
 - `allow_mrr_disclosure`
 - `allow_founder_identity_disclosure`
 - `allow_phone_address_disclosure`

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Search the web with Exa first, then Tavily, then DuckDuckGo.
+Search the web with provider routing that prefers Baidu for China-related queries,
+Exa for broader/global queries, Tavily as a second pass, and DuckDuckGo as fallback.
 """
 
 from __future__ import annotations
@@ -14,10 +15,31 @@ import subprocess
 import sys
 from typing import Any, Callable
 
+SearchFn = Callable[[], dict[str, Any]]
+
+CHINA_KEYWORDS = (
+    "china",
+    "chinese",
+    "beijing",
+    "shanghai",
+    "guangzhou",
+    "shenzhen",
+    "hangzhou",
+    "zhejiang",
+    "hong kong",
+    "macau",
+    "taiwan",
+    "xiaoshan",
+    ".cn",
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Search the web with Exa first, Tavily second, and DuckDuckGo as fallback."
+        description=(
+            "Search the web with Baidu first for China-related queries, "
+            "otherwise Exa first, Tavily second, and DuckDuckGo as fallback."
+        )
     )
     parser.add_argument("query", help="Search query")
     parser.add_argument(
@@ -72,6 +94,20 @@ def pick_snippet(*values: Any) -> str:
     return ""
 
 
+def contains_cjk(text: str) -> bool:
+    return any(
+        "\u3400" <= char <= "\u4dbf" or "\u4e00" <= char <= "\u9fff"
+        for char in text
+    )
+
+
+def is_china_related_query(query: str) -> bool:
+    lowered = query.lower()
+    if contains_cjk(query):
+        return True
+    return any(keyword in lowered for keyword in CHINA_KEYWORDS)
+
+
 def exa_search(query: str, max_results: int) -> dict[str, Any]:
     api_key = os.environ.get("EXA_API_KEY")
     if not api_key:
@@ -87,7 +123,8 @@ def exa_search(query: str, max_results: int) -> dict[str, Any]:
                     "maxCharacters": 4000,
                 }
             },
-        }
+        },
+        ensure_ascii=False,
     )
 
     command = [
@@ -147,7 +184,8 @@ def tavily_search(query: str, max_results: int, topic: str) -> dict[str, Any]:
             "include_answer": False,
             "include_images": False,
             "include_raw_content": False,
-        }
+        },
+        ensure_ascii=False,
     )
 
     command = [
@@ -186,6 +224,72 @@ def tavily_search(query: str, max_results: int, topic: str) -> dict[str, Any]:
     }
 
 
+def baidu_search(query: str, max_results: int) -> dict[str, Any]:
+    api_key = os.environ.get("BAIDU_SEARCH_API_KEY") or os.environ.get(
+        "APPBUILDER_API_KEY"
+    )
+    if not api_key:
+        raise RuntimeError(
+            "BAIDU_SEARCH_API_KEY (or APPBUILDER_API_KEY) is not configured"
+        )
+
+    payload = json.dumps(
+        {
+            "messages": [{"content": query, "role": "user"}],
+            "search_source": "baidu_search_v2",
+            "resource_type_filter": [{"type": "web", "top_k": max(1, min(max_results, 50))}],
+        },
+        ensure_ascii=False,
+    )
+
+    command = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--fail-with-body",
+        "--max-time",
+        "20",
+        "--request",
+        "POST",
+        "--url",
+        "https://qianfan.baidubce.com/v2/ai_search/web_search",
+        "--header",
+        "Content-Type: application/json",
+        "--header",
+        f"X-Appbuilder-Authorization: Bearer {api_key}",
+        "--data",
+        payload,
+    ]
+
+    data = run_curl_json(command, "Baidu")
+    if data.get("code") and not data.get("references"):
+        raise RuntimeError(
+            f"Baidu request failed: {data.get('code')} {data.get('message', '').strip()}".strip()
+        )
+
+    results = []
+    for item in data.get("references", []):
+        item_type = item.get("type")
+        if item_type and item_type != "web":
+            continue
+        results.append(
+            {
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "snippet": pick_snippet(item.get("content")),
+                "published_date": item.get("date"),
+                "score": item.get("rerank_score"),
+                "authority_score": item.get("authority_score"),
+            }
+        )
+
+    return {
+        "provider": "baidu",
+        "query": query,
+        "results": results,
+    }
+
+
 def duckduckgo_search(query: str, max_results: int) -> dict[str, Any]:
     try:
         from duckduckgo_search import DDGS
@@ -214,22 +318,43 @@ def duckduckgo_search(query: str, max_results: int) -> dict[str, Any]:
     }
 
 
+def build_provider_chain(
+    query: str,
+    max_results: int,
+    topic: str,
+) -> tuple[bool, list[tuple[str, SearchFn]]]:
+    china_related = is_china_related_query(query)
+    registry: dict[str, SearchFn] = {
+        "baidu": lambda: baidu_search(query, max_results),
+        "exa": lambda: exa_search(query, max_results),
+        "tavily": lambda: tavily_search(query, max_results, topic),
+        "duckduckgo": lambda: duckduckgo_search(query, max_results),
+    }
+    order = ["baidu", "exa", "tavily", "duckduckgo"] if china_related else [
+        "exa",
+        "tavily",
+        "baidu",
+        "duckduckgo",
+    ]
+    return china_related, [(provider_name, registry[provider_name]) for provider_name in order]
+
+
 def run_standard_search(
     query: str,
     max_results: int,
     topic: str,
 ) -> dict[str, Any]:
-    providers: list[tuple[str, Callable[[], dict[str, Any]]]] = [
-        ("exa", lambda: exa_search(query, max_results)),
-        ("tavily", lambda: tavily_search(query, max_results, topic)),
-        ("duckduckgo", lambda: duckduckgo_search(query, max_results)),
-    ]
+    china_related, providers = build_provider_chain(query, max_results, topic)
 
     last_error: RuntimeError | None = None
     for provider_name, provider_search in providers:
         try:
             payload = provider_search()
             payload["mode"] = "standard"
+            payload["routing"] = {
+                "china_related": china_related,
+                "provider_order": [name for name, _ in providers],
+            }
             return payload
         except RuntimeError as error:
             last_error = error
@@ -248,11 +373,7 @@ def run_research_search(
     max_results: int,
     topic: str,
 ) -> dict[str, Any]:
-    providers: list[tuple[str, Callable[[], dict[str, Any]]]] = [
-        ("exa", lambda: exa_search(query, max_results)),
-        ("tavily", lambda: tavily_search(query, max_results, topic)),
-        ("duckduckgo", lambda: duckduckgo_search(query, max_results)),
-    ]
+    china_related, providers = build_provider_chain(query, max_results, topic)
 
     collected_results: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -279,6 +400,10 @@ def run_research_search(
     return {
         "mode": "research",
         "query": query,
+        "routing": {
+            "china_related": china_related,
+            "provider_order": [name for name, _ in providers],
+        },
         "providers": collected_results,
         "errors": errors,
     }

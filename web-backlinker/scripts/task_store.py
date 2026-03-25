@@ -2,10 +2,12 @@
 import argparse
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlsplit, urlunsplit
 
 NOTE_LIMIT = 8
 LOCAL_SUMMARY_ORDER = [
@@ -54,6 +56,7 @@ REASON_PENALTY = {
     'missing_config': 95,
     'login_failed': 45,
 }
+ACTIVE_LEDGER_STATES = {'submitted', 'pending_email', 'verified', 'already_listed'}
 
 
 def now_utc() -> datetime:
@@ -108,6 +111,159 @@ def trim_notes(notes: Iterable[str], limit: int = NOTE_LIMIT) -> List[str]:
     return cleaned
 
 
+def normalize_url_value(raw: str) -> str:
+    value = (raw or '').strip()
+    if not value:
+        return ''
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9+.-]*://', value):
+        value = 'https://' + value
+    parts = urlsplit(value)
+    scheme = parts.scheme.lower() or 'https'
+    netloc = parts.netloc.lower()
+    if ':' in netloc:
+        host, port = netloc.rsplit(':', 1)
+        if (scheme == 'https' and port == '443') or (scheme == 'http' and port == '80'):
+            netloc = host
+    path = parts.path or '/'
+    path = re.sub(r'/+', '/', path)
+    return urlunsplit((scheme, netloc, path, parts.query, ''))
+
+
+def domain_from_url_value(url: str) -> str:
+    if not url:
+        return ''
+    try:
+        return urlsplit(url).netloc.lower()
+    except Exception:
+        return ''
+
+
+def normalize_promoted_url(raw: str) -> str:
+    normalized = normalize_url_value(raw)
+    if not normalized:
+        return ''
+    parts = urlsplit(normalized)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path or '/', '', ''))
+
+
+def normalize_ledger_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(record)
+    promoted_url = normalize_promoted_url(normalized.get('promoted_url', ''))
+    target_normalized_url = normalize_url_value(normalized.get('target_normalized_url', ''))
+    target_domain = (normalized.get('target_domain') or '').strip().lower()
+    if not target_domain and target_normalized_url:
+        target_domain = domain_from_url_value(target_normalized_url)
+    normalized['promoted_url'] = promoted_url
+    normalized['promoted_domain'] = domain_from_url_value(promoted_url)
+    normalized['target_domain'] = target_domain
+    normalized['target_normalized_url'] = target_normalized_url
+    normalized['state'] = str(normalized.get('state', '')).strip().lower()
+    normalized.setdefault('first_seen_at', '')
+    normalized.setdefault('updated_at', '')
+    normalized.setdefault('run_id', '')
+    normalized.setdefault('task_id', '')
+    normalized.setdefault('listing_url', '')
+    normalized.setdefault('note', '')
+    return normalized
+
+
+def load_submission_ledger(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {'updated_at': '', 'records': []}
+    raw = load_json(path)
+    if isinstance(raw, list):
+        raw = {'updated_at': '', 'records': raw}
+    records = [normalize_ledger_record(record) for record in raw.get('records', [])]
+    return {
+        'updated_at': raw.get('updated_at', ''),
+        'records': records,
+    }
+
+
+def save_submission_ledger(path: Path, ledger: Dict[str, Any]):
+    payload = {
+        'updated_at': ledger.get('updated_at', ''),
+        'records': [normalize_ledger_record(record) for record in ledger.get('records', [])],
+    }
+    save_json(path, payload)
+
+
+def find_submission_match(ledger: Dict[str, Any], promoted_url: str, domain: str = '', normalized_url: str = '') -> Optional[Dict[str, Any]]:
+    promoted_key = normalize_promoted_url(promoted_url)
+    domain_key = (domain or '').strip().lower()
+    normalized_key = normalize_url_value(normalized_url)
+    if not promoted_key or (not domain_key and not normalized_key):
+        return None
+    for record in ledger.get('records', []):
+        if record.get('state') not in ACTIVE_LEDGER_STATES:
+            continue
+        if record.get('promoted_url') != promoted_key:
+            continue
+        if domain_key and record.get('target_domain') == domain_key:
+            return record
+        if normalized_key and record.get('target_normalized_url') == normalized_key:
+            return record
+    return None
+
+
+def upsert_submission_record(ledger: Dict[str, Any], promoted_url: str, domain: str, normalized_url: str, state: str,
+                             run_id: str = '', task_id: str = '', listing_url: str = '', note: str = '') -> Tuple[Dict[str, Any], bool]:
+    promoted_key = normalize_promoted_url(promoted_url)
+    normalized_key = normalize_url_value(normalized_url)
+    domain_key = (domain or '').strip().lower() or domain_from_url_value(normalized_key)
+    if not promoted_key:
+        raise SystemExit('promoted_url is required to record a submission ledger entry')
+    if not domain_key and not normalized_key:
+        raise SystemExit('either domain or normalized_url is required to record a submission ledger entry')
+
+    state_key = (state or '').strip().lower()
+    if not state_key:
+        raise SystemExit('state is required to record a submission ledger entry')
+
+    ts = now_iso()
+    existing = find_submission_match(ledger, promoted_key, domain_key, normalized_key)
+    if existing:
+        existing['state'] = state_key
+        existing['updated_at'] = ts
+        existing['run_id'] = run_id or existing.get('run_id', '')
+        existing['task_id'] = task_id or existing.get('task_id', '')
+        existing['listing_url'] = normalize_url_value(listing_url) if listing_url else existing.get('listing_url', '')
+        existing['note'] = note or existing.get('note', '')
+        ledger['updated_at'] = ts
+        return existing, False
+
+    record = normalize_ledger_record({
+        'promoted_url': promoted_key,
+        'target_domain': domain_key,
+        'target_normalized_url': normalized_key,
+        'state': state_key,
+        'first_seen_at': ts,
+        'updated_at': ts,
+        'run_id': run_id,
+        'task_id': task_id,
+        'listing_url': listing_url,
+        'note': note,
+    })
+    ledger.setdefault('records', []).append(record)
+    ledger['updated_at'] = ts
+    return record, True
+
+
+def infer_ledger_state(task: Dict[str, Any]) -> str:
+    reason = (task.get('reason_code') or task.get('result_code') or '').strip().lower()
+    sheet_status = (task.get('sheet_status') or '').strip().upper()
+    status = (task.get('status') or '').strip().upper()
+    if reason == 'already_submitted':
+        return 'already_listed'
+    if sheet_status == 'VERIFIED':
+        return 'verified'
+    if status == 'WAITING_EMAIL' or sheet_status == 'PENDING_EMAIL':
+        return 'pending_email'
+    if status == 'DONE' or sheet_status == 'SUBMITTED':
+        return 'submitted'
+    return ''
+
+
 def default_task_id(row: Dict[str, Any]) -> str:
     if row.get('task_id'):
         return row['task_id']
@@ -125,13 +281,29 @@ def normalize_task(task: Dict[str, Any]) -> Dict[str, Any]:
     normalized.setdefault('domain', '')
     normalized.setdefault('input_url', '')
     normalized.setdefault('normalized_url', '')
+    normalized.setdefault('site_type', 'unknown')
+    normalized.setdefault('auth_type', 'unknown')
+    normalized.setdefault('submission_type', 'unknown')
     normalized.setdefault('status', 'PENDING')
     normalized.setdefault('phase', 'imported')
     normalized.setdefault('strategy', '')
     normalized['attempts'] = coerce_int(normalized.get('attempts', 0), 0)
+    try:
+        normalized['playbook_confidence'] = float(normalized.get('playbook_confidence', 0.0) or 0.0)
+    except Exception:
+        normalized['playbook_confidence'] = 0.0
+    normalized['fallback_count'] = coerce_int(normalized.get('fallback_count', 0), 0)
     normalized.setdefault('last_error', '')
     normalized.setdefault('reason_code', '')
     normalized.setdefault('route', '')
+    normalized.setdefault('execution_mode', '')
+    normalized.setdefault('automation_disposition', '')
+    normalized.setdefault('playbook_confidence', 0.0)
+    normalized.setdefault('replay_status', '')
+    normalized.setdefault('account_ref', '')
+    normalized.setdefault('credential_ref', '')
+    normalized.setdefault('last_validated_at', '')
+    normalized.setdefault('fallback_count', 0)
     normalized.setdefault('result_code', '')
     normalized.setdefault('artifact_ref', '')
     normalized.setdefault('sheet_status', '')
@@ -338,6 +510,9 @@ def cmd_init(args):
             'domain': row['domain'],
             'input_url': row.get('input_url', ''),
             'normalized_url': row['normalized_url'],
+            'site_type': row.get('site_type', 'unknown'),
+            'auth_type': row.get('auth_type', 'unknown'),
+            'submission_type': row.get('submission_type', 'unknown'),
             'status': 'PENDING',
             'phase': 'imported',
             'strategy': '',
@@ -345,6 +520,14 @@ def cmd_init(args):
             'last_error': '',
             'reason_code': '',
             'route': '',
+            'execution_mode': 'native_scout',
+            'automation_disposition': '',
+            'playbook_confidence': 0.0,
+            'replay_status': 'not_compiled',
+            'account_ref': '',
+            'credential_ref': '',
+            'last_validated_at': '',
+            'fallback_count': 0,
             'result_code': '',
             'artifact_ref': '',
             'sheet_status': 'IMPORTED',
@@ -357,6 +540,36 @@ def cmd_init(args):
             'notes': [],
         })
         tasks.append(task)
+
+    duplicate_matches = []
+    if args.submission_ledger and args.promoted_url:
+        ledger_path = Path(args.submission_ledger).expanduser().resolve()
+        ledger = load_submission_ledger(ledger_path)
+        for task in tasks:
+            match = find_submission_match(ledger, args.promoted_url, task.get('domain', ''), task.get('normalized_url', ''))
+            if not match:
+                continue
+            task['status'] = args.duplicate_status
+            task['phase'] = 'dedupe.already_submitted'
+            task['reason_code'] = 'already_submitted'
+            task['result_code'] = match.get('state', 'already_submitted')
+            task['sheet_status'] = args.duplicate_sheet_status
+            note_parts = ['matched submission ledger']
+            if match.get('run_id'):
+                note_parts.append(f"run={match['run_id']}")
+            if match.get('updated_at'):
+                note_parts.append(f"seen={match['updated_at']}")
+            note = '; '.join(note_parts)
+            task['sheet_note'] = note
+            append_note_to_task(task, note)
+            duplicate_matches.append({
+                'task_id': task['task_id'],
+                'row_id': task.get('row_id', ''),
+                'domain': task.get('domain', ''),
+                'ledger_state': match.get('state', ''),
+                'run_id': match.get('run_id', ''),
+            })
+
     data = {
         'generated_at': ts,
         'count': len(tasks),
@@ -364,7 +577,20 @@ def cmd_init(args):
     }
     save_store(out_path, data)
     append_event(events_path, {'ts': ts, 'action': 'init', 'count': len(tasks), 'taskStore': str(out_path)})
-    print(json.dumps({'ok': True, 'count': len(tasks), 'output': str(out_path)}, ensure_ascii=False, indent=2))
+    if duplicate_matches:
+        append_event(events_path, {
+            'ts': ts,
+            'action': 'init_dedupe',
+            'duplicate_count': len(duplicate_matches),
+            'submission_ledger': str(Path(args.submission_ledger).expanduser().resolve()),
+        })
+    print(json.dumps({
+        'ok': True,
+        'count': len(tasks),
+        'duplicate_count': len(duplicate_matches),
+        'duplicates': duplicate_matches,
+        'output': str(out_path),
+    }, ensure_ascii=False, indent=2))
 
 
 def cmd_claim(args):
@@ -420,12 +646,34 @@ def cmd_checkpoint(args):
         task['phase'] = args.phase
     if args.status:
         task['status'] = args.status
+    if args.site_type:
+        task['site_type'] = args.site_type
+    if args.auth_type:
+        task['auth_type'] = args.auth_type
+    if args.submission_type:
+        task['submission_type'] = args.submission_type
     if args.note:
         append_note_to_task(task, args.note)
     if args.reason_code:
         task['reason_code'] = args.reason_code
     if args.route:
         task['route'] = args.route
+    if args.execution_mode:
+        task['execution_mode'] = args.execution_mode
+    if args.automation_disposition:
+        task['automation_disposition'] = args.automation_disposition
+    if args.playbook_confidence >= 0:
+        task['playbook_confidence'] = args.playbook_confidence
+    if args.replay_status:
+        task['replay_status'] = args.replay_status
+    if args.account_ref:
+        task['account_ref'] = args.account_ref
+    if args.credential_ref:
+        task['credential_ref'] = args.credential_ref
+    if args.last_validated_at:
+        task['last_validated_at'] = args.last_validated_at
+    if args.increment_fallback_count:
+        task['fallback_count'] = coerce_int(task.get('fallback_count', 0), 0) + args.increment_fallback_count
     if args.result_code:
         task['result_code'] = args.result_code
     if args.artifact_ref:
@@ -445,10 +693,16 @@ def cmd_checkpoint(args):
         'task_id': task['task_id'],
         'row_id': task.get('row_id', ''),
         'domain': task['domain'],
+        'site_type': task.get('site_type', ''),
+        'auth_type': task.get('auth_type', ''),
+        'submission_type': task.get('submission_type', ''),
         'status': task['status'],
         'phase': task.get('phase', ''),
         'reason_code': task.get('reason_code', ''),
         'route': task.get('route', ''),
+        'execution_mode': task.get('execution_mode', ''),
+        'automation_disposition': task.get('automation_disposition', ''),
+        'account_ref': task.get('account_ref', ''),
         'artifact_ref': task.get('artifact_ref', ''),
         'note': args.note or '',
     })
@@ -466,12 +720,34 @@ def cmd_finish(args):
         task['phase'] = args.phase
     if args.error:
         task['last_error'] = args.error
+    if args.site_type:
+        task['site_type'] = args.site_type
+    if args.auth_type:
+        task['auth_type'] = args.auth_type
+    if args.submission_type:
+        task['submission_type'] = args.submission_type
     if args.note:
         append_note_to_task(task, args.note)
     if args.reason_code:
         task['reason_code'] = args.reason_code
     if args.route:
         task['route'] = args.route
+    if args.execution_mode:
+        task['execution_mode'] = args.execution_mode
+    if args.automation_disposition:
+        task['automation_disposition'] = args.automation_disposition
+    if args.playbook_confidence >= 0:
+        task['playbook_confidence'] = args.playbook_confidence
+    if args.replay_status:
+        task['replay_status'] = args.replay_status
+    if args.account_ref:
+        task['account_ref'] = args.account_ref
+    if args.credential_ref:
+        task['credential_ref'] = args.credential_ref
+    if args.last_validated_at:
+        task['last_validated_at'] = args.last_validated_at
+    if args.increment_fallback_count:
+        task['fallback_count'] = coerce_int(task.get('fallback_count', 0), 0) + args.increment_fallback_count
     if args.result_code:
         task['result_code'] = args.result_code
     if args.artifact_ref:
@@ -484,6 +760,35 @@ def cmd_finish(args):
     task['updated_at'] = ts
     task['locked_by'] = ''
     task['lock_expires_at'] = ''
+
+    ledger_record = None
+    ledger_state = args.ledger_state or infer_ledger_state(task)
+    if args.submission_ledger and args.promoted_url and ledger_state:
+        ledger_path = Path(args.submission_ledger).expanduser().resolve()
+        ledger = load_submission_ledger(ledger_path)
+        ledger_record, created = upsert_submission_record(
+            ledger,
+            promoted_url=args.promoted_url,
+            domain=task.get('domain', ''),
+            normalized_url=task.get('normalized_url', ''),
+            state=ledger_state,
+            run_id=args.run_id,
+            task_id=task.get('task_id', ''),
+            listing_url=args.listing_url,
+            note=args.ledger_note or args.note,
+        )
+        save_submission_ledger(ledger_path, ledger)
+        append_event(events_path, {
+            'ts': ts,
+            'action': 'ledger_record',
+            'task_id': task['task_id'],
+            'row_id': task.get('row_id', ''),
+            'domain': task['domain'],
+            'ledger_state': ledger_state,
+            'submission_ledger': str(ledger_path),
+            'created': created,
+        })
+
     save_store(store_path, data)
     append_event(events_path, {
         'ts': ts,
@@ -491,15 +796,21 @@ def cmd_finish(args):
         'task_id': task['task_id'],
         'row_id': task.get('row_id', ''),
         'domain': task['domain'],
+        'site_type': task.get('site_type', ''),
+        'auth_type': task.get('auth_type', ''),
+        'submission_type': task.get('submission_type', ''),
         'status': task['status'],
         'phase': task.get('phase', ''),
         'error': args.error or '',
         'reason_code': task.get('reason_code', ''),
         'route': task.get('route', ''),
+        'execution_mode': task.get('execution_mode', ''),
+        'automation_disposition': task.get('automation_disposition', ''),
+        'account_ref': task.get('account_ref', ''),
         'artifact_ref': task.get('artifact_ref', ''),
         'note': args.note or '',
     })
-    print(json.dumps({'ok': True, 'task': task}, ensure_ascii=False, indent=2))
+    print(json.dumps({'ok': True, 'task': task, 'ledger_record': ledger_record}, ensure_ascii=False, indent=2))
 
 
 def cmd_summary(args):
@@ -536,11 +847,19 @@ def cmd_next_candidates(args):
             'task_id': task['task_id'],
             'row_id': task.get('row_id', ''),
             'domain': task.get('domain', ''),
+            'site_type': task.get('site_type', ''),
+            'auth_type': task.get('auth_type', ''),
+            'submission_type': task.get('submission_type', ''),
             'status': task.get('status', ''),
             'phase': task.get('phase', ''),
             'attempts': task.get('attempts', 0),
             'reason_code': task.get('reason_code', ''),
             'route': task.get('route', ''),
+            'execution_mode': task.get('execution_mode', ''),
+            'automation_disposition': task.get('automation_disposition', ''),
+            'playbook_confidence': task.get('playbook_confidence', 0.0),
+            'replay_status': task.get('replay_status', ''),
+            'account_ref': task.get('account_ref', ''),
             'playbook_id': task.get('playbook_id', ''),
             'artifact_ref': task.get('artifact_ref', ''),
             'updated_at': task.get('updated_at', ''),
@@ -551,6 +870,41 @@ def cmd_next_candidates(args):
         'statuses': statuses,
         'count': len(rendered),
         'candidates': rendered,
+    }, ensure_ascii=False, indent=2))
+
+
+def cmd_ledger_check(args):
+    ledger_path = Path(args.ledger).expanduser().resolve()
+    ledger = load_submission_ledger(ledger_path)
+    match = find_submission_match(ledger, args.promoted_url, args.domain, args.normalized_url)
+    print(json.dumps({
+        'ok': True,
+        'duplicate': bool(match),
+        'ledger_path': str(ledger_path),
+        'match': match,
+    }, ensure_ascii=False, indent=2))
+
+
+def cmd_ledger_record(args):
+    ledger_path = Path(args.ledger).expanduser().resolve()
+    ledger = load_submission_ledger(ledger_path)
+    record, created = upsert_submission_record(
+        ledger,
+        promoted_url=args.promoted_url,
+        domain=args.domain,
+        normalized_url=args.normalized_url,
+        state=args.state,
+        run_id=args.run_id,
+        task_id=args.task_id,
+        listing_url=args.listing_url,
+        note=args.note,
+    )
+    save_submission_ledger(ledger_path, ledger)
+    print(json.dumps({
+        'ok': True,
+        'created': created,
+        'ledger_path': str(ledger_path),
+        'record': record,
     }, ensure_ascii=False, indent=2))
 
 
@@ -656,6 +1010,10 @@ def main():
     p.add_argument('--input-json', required=True, help='normalize_targets.py JSON output')
     p.add_argument('--output', required=True)
     p.add_argument('--events', required=True)
+    p.add_argument('--submission-ledger', default='')
+    p.add_argument('--promoted-url', default='')
+    p.add_argument('--duplicate-status', default='SKIPPED')
+    p.add_argument('--duplicate-sheet-status', default='SKIPPED')
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser('claim')
@@ -675,9 +1033,20 @@ def main():
     p.add_argument('--task', required=True)
     p.add_argument('--phase', default='')
     p.add_argument('--status', default='')
+    p.add_argument('--site-type', default='')
+    p.add_argument('--auth-type', default='')
+    p.add_argument('--submission-type', default='')
     p.add_argument('--note', default='')
     p.add_argument('--reason-code', default='')
     p.add_argument('--route', default='')
+    p.add_argument('--execution-mode', default='')
+    p.add_argument('--automation-disposition', default='')
+    p.add_argument('--playbook-confidence', type=float, default=-1.0)
+    p.add_argument('--replay-status', default='')
+    p.add_argument('--account-ref', default='')
+    p.add_argument('--credential-ref', default='')
+    p.add_argument('--last-validated-at', default='')
+    p.add_argument('--increment-fallback-count', type=int, default=0)
     p.add_argument('--result-code', default='')
     p.add_argument('--artifact-ref', default='')
     p.add_argument('--sheet-status', default='')
@@ -691,14 +1060,31 @@ def main():
     p.add_argument('--task', required=True)
     p.add_argument('--status', required=True)
     p.add_argument('--phase', default='')
+    p.add_argument('--site-type', default='')
+    p.add_argument('--auth-type', default='')
+    p.add_argument('--submission-type', default='')
     p.add_argument('--error', default='')
     p.add_argument('--note', default='')
     p.add_argument('--reason-code', default='')
     p.add_argument('--route', default='')
+    p.add_argument('--execution-mode', default='')
+    p.add_argument('--automation-disposition', default='')
+    p.add_argument('--playbook-confidence', type=float, default=-1.0)
+    p.add_argument('--replay-status', default='')
+    p.add_argument('--account-ref', default='')
+    p.add_argument('--credential-ref', default='')
+    p.add_argument('--last-validated-at', default='')
+    p.add_argument('--increment-fallback-count', type=int, default=0)
     p.add_argument('--result-code', default='')
     p.add_argument('--artifact-ref', default='')
     p.add_argument('--sheet-status', default='')
     p.add_argument('--sheet-note', default='')
+    p.add_argument('--submission-ledger', default='')
+    p.add_argument('--promoted-url', default='')
+    p.add_argument('--run-id', default='')
+    p.add_argument('--ledger-state', default='')
+    p.add_argument('--ledger-note', default='')
+    p.add_argument('--listing-url', default='')
     p.set_defaults(func=cmd_finish)
 
     p = sub.add_parser('summary')
@@ -712,6 +1098,25 @@ def main():
     p.add_argument('--include-locked', action='store_true')
     p.add_argument('--status', action='append', help='candidate statuses; repeatable')
     p.set_defaults(func=cmd_next_candidates)
+
+    p = sub.add_parser('ledger-check')
+    p.add_argument('--ledger', required=True)
+    p.add_argument('--promoted-url', required=True)
+    p.add_argument('--domain', default='')
+    p.add_argument('--normalized-url', default='')
+    p.set_defaults(func=cmd_ledger_check)
+
+    p = sub.add_parser('ledger-record')
+    p.add_argument('--ledger', required=True)
+    p.add_argument('--promoted-url', required=True)
+    p.add_argument('--domain', default='')
+    p.add_argument('--normalized-url', default='')
+    p.add_argument('--state', required=True)
+    p.add_argument('--run-id', default='')
+    p.add_argument('--task-id', default='')
+    p.add_argument('--listing-url', default='')
+    p.add_argument('--note', default='')
+    p.set_defaults(func=cmd_ledger_record)
 
     p = sub.add_parser('lease-acquire')
     p.add_argument('--store', default='')

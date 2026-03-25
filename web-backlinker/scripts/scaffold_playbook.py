@@ -51,6 +51,7 @@ def main() -> int:
     body = f"""playbook_id: {playbook_id}
 scope: {args.scope}
 domain_or_family: {args.name}
+domain: {args.name if args.scope == 'site' else 'null'}
 site_type: {args.site_type}
 auth_type: {args.auth_type}
 submission_type: {args.submission_type}
@@ -58,7 +59,15 @@ version: 1
 success_count: 0
 last_success_at: null
 credential_ref: {args.credential_ref or 'null'}
+account_ref: null
+browser_profile_ref: null
+execution_mode: native
+automation_disposition: ASSISTED_EXECUTE
+stability_score: 0.0
+replay_confidence: 0.0
+last_validated_at: null
 created_at: {now}
+updated_at: {now}
 entrypoints:
   home: null
   login: null
@@ -73,9 +82,13 @@ steps:
     success_signal: null
     failure_signal: null
     notes: fill after a successful run
+direct_steps: []
+field_map: {{}}
+result_checks: {{}}
 success_signals: []
 failure_signals: []
 manual_touchpoints: []
+fallback_route: native_submit
 notes:
   - scaffolded by web-backlinker
 """

@@ -144,7 +144,7 @@ Create the local runtime layout and a new run manifest.
 Return the sheet link immediately to the user using `[WB-INIT]`.
 
 ### Phase 2 — import and normalize targets
-Read the txt file, dedupe by normalized URL, assign row ids, write `Targets`, and initialize the local task store.
+Read the txt file, dedupe by normalized URL, assign row ids, write `Targets`, initialize the local task store, and apply the cross-run submission ledger so already-submitted targets get parked before execution.
 
 ### Phase 3 — build/update product profile
 Inspect the promoted site and build a factual profile before filling submissions.
@@ -173,7 +173,7 @@ Primary v1 focus:
 Any row that requires human review should be marked and skipped for now, not allowed to stop the batch.
 
 ### Phase 7 — learn
-Successful runs update site playbooks and may later contribute to pattern playbooks.
+Successful runs update site playbooks, upsert the submission ledger for cross-run dedupe, and may later contribute to pattern playbooks.
 
 ### Phase 8 — watchdog and summary
 A separate watchdog inspects whether tasks are progressing and restarts/resumes work when progress stalls.

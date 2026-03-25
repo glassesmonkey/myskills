@@ -7,6 +7,8 @@ description: "Fetch readable content from public webpages. Use when Codex needs 
 
 Read a public webpage into model-friendly Markdown with the lowest-friction path first.
 
+**Default boundary:** use this skill when the job is mainly **reading a known public page**. If the task expands into broader web work — source discovery, login state, clicking, scrolling, form actions, or dynamic-browser interaction — upgrade to `web-access` instead of forcing this skill past its natural limit.
+
 The default flow is:
 1. Try Jina Reader with `https://r.jina.ai/YOUR_URL`
 2. If Jina fails or returns unusable output, fetch the page with Scrapling
