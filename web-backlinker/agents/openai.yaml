@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backlink Helper"
+  short_description: "Run resumable backlink submission campaigns with local memory"
+  default_prompt: "Use $backlink-helper to bootstrap a backlink run, scout targets, submit listings, and persist playbook memory."

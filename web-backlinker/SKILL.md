@@ -1,162 +1,259 @@
 ---
-name: web-backlinker
-description: Standardize semi-automated backlink operations for a txt list of target URLs. Use when OpenClaw needs to (1) create a Google Sheet control panel for backlink runs, (2) scout and classify directory/community/article-platform targets, (3) execute backlink work as resumable small-batch drain workers (up to 3 URLs per run) instead of one giant batch run, (4) persist local task state, playbooks, leases, manifests, and artifacts for recovery, or (5) collect/init a reusable promoted-site submission profile before backlink execution so later rows do not stall on missing company facts, emails, or policy choices.
+name: backlink-helper
+description: Automate repeatable backlink and directory-submission campaigns for a promoted website. Use when Codex needs to scout submission targets, build a reusable promoted-site profile from a user-supplied URL, generate UTM-tagged submission links, register or reuse site accounts through email signup or Google OAuth, read verification emails with the Google Workspace `gog` CLI, remember successful site-specific submission playbooks for future reuse, and drain a task list autonomously without pausing on each row.
 ---
 
-# Web Backlinker
+# Backlink Helper
 
-Use this skill to turn a backlink target list into a non-blocking, sheet-driven workflow with local memory. Optimize for repeatability, auditable state, crash recovery, and gradual reuse rather than one-off heroic browser sessions.
+Turn backlink work into a resumable system instead of a one-off browser sprint. The core idea is:
 
-## Core operating model
+1. Learn the promoted site once.
+2. Learn each target site once.
+3. Reuse both memories on later runs.
 
-- Treat a user-provided txt file as the import format only.
-- Treat Google Sheet as the operational control panel and review surface.
-- Treat local workspace files as the canonical store for task state, playbooks, product profiles, run manifests, artifacts, account registry metadata, and the cross-run submission ledger.
-- Treat secrets/keyring as the only allowed store for passwords or app passwords.
-- Treat `browser-use` direct CLI as an optional fast path for stable, replayable directory flows — never as the only browser path.
-- Treat human-required nodes as row-level detours: mark, report, continue.
-- Treat one URL as one recoverable task unit.
-- Treat long tasks as checkpointed flows, not as one uninterrupted monolithic run.
-- Treat promoted-site initialization as a first-class phase, not as ad-hoc Q&A in the middle of worker execution.
+## Read These References When Needed
 
-## Read these references when needed
+- `references/architecture.md`
+  Use for the overall design, the borrowed ideas from the two reference projects, and the deliberate improvements in this skill.
+- `references/init-intake.md`
+  Read before the first real worker run. Use it to collect required business facts and policy boundaries, then keep the run in `WAITING_CONFIG` until the intake is complete.
+- `references/runtime.md`
+  Use before bootstrapping or draining a task list.
+- `references/site-memory.md`
+  Use when deciding whether to probe again, reuse an old route, or promote a successful path into a stable playbook.
+- `references/auth-and-verification.md`
+  Use before any signup, OAuth, magic-link, or email-verification flow.
+- `references/captcha-policy.md`
+  Read before interacting with any CAPTCHA or anti-bot surface.
+- `references/profile-probing.md`
+  Use when building the promoted-site material pack or when a form asks for facts that are still missing.
+- `references/target-scouting.md`
+  Use when a target site is new and the skill needs to classify submit links, forms, login mode, and anti-bot level.
+- `references/worker-brief.md`
+  Use before opening a browser worker so the worker only reads the smallest useful context.
 
-- `references/init-intake.md` — required initialization fields, policy boundaries, normalization rules, and `WAITING_CONFIG` gating
-- `references/design.md` — overall architecture, object model, workflow, v1/v2 scope
-- `references/runtime-architecture.md` — small-batch drain worker model, batch lease, worker brief, watchdog design, time budgets, and recovery rules
-- `references/sheet-schema.md` — required tabs, columns, and write policy
-- `references/state-machine.md` — row, task, and run states plus transition rules
-- `references/strategy-rules.md` — site classification, route selection, and browser choice
-- `references/product-profiler.md` — how to build the promoted-site profile and keep claims safe
-- `references/playbook-memory.md` — local storage layout, playbook schema, learning rules
-- `references/browser-use-fast-path.md` — when to compile stable directory flows into a low-token `browser-use` direct-execution lane
-- `references/account-registry.md` — how to reuse site accounts without storing raw passwords in playbooks or sheets
-- `references/status-format.md` — fixed user-visible run/status line formats
-- `references/safety-rules.md` — external-write guardrails; read before any signup, submission, or credential handling
+## Default Workflow
 
-## Default workflow
+1. Bootstrap runtime storage.
 
-1. Freeze scope.
-   - Require the target txt path.
-   - Prefer promoted site URL, product name, and contact email.
-   - Read `references/init-intake.md` before starting the real run.
-   - Collect the required intake fields first instead of waiting for later blockers to expose them.
-   - If intake is incomplete, still create the Sheet and import targets, but mark the run `WAITING_CONFIG` instead of improvising.
+```bash
+python3 scripts/bootstrap_runtime.py \
+  --campaign "march-launch" \
+  --promoted-url "https://example.com"
+```
 
-2. Bootstrap local runtime.
-   - Run `scripts/bootstrap_run.py` to create `data/web-backlinker/{runs,artifacts,playbooks,product-profiles,tasks}` and emit a run manifest.
+2. Probe the promoted site before touching targets.
 
-3. Create the Google Sheet first.
-   - Create the Sheet before long-running work so the user gets an immediate control surface.
-   - Return the sheet link immediately using the exact `[WB-INIT]` line from `references/status-format.md`.
-   - For Google Sheets / Gmail / Drive operations, read the `gog` skill.
+```bash
+python3 scripts/probe_promoted_site.py \
+  --url "https://example.com" \
+  --out data/backlink-helper/profiles/example.com.json
+```
 
-4. Import targets and persist task state.
-   - Run `scripts/normalize_targets.py` on the txt input.
-   - Write normalized rows into the `Targets` tab.
-   - Create/update a local task store with `scripts/task_store.py init ...`.
-   - Deduplicate by normalized URL inside the imported txt, not just by domain.
-   - Pass `--submission-ledger <manifest.submission_ledger_path> --promoted-url <canonical promoted url>` during init so previously submitted targets for the same promoted site are parked before execution.
+3. Initialize intake and block the run until required fields are present.
 
-5. Build or refresh the promoted-site profile.
-   - Read `references/product-profiler.md`.
-   - Persist the full profile locally.
-   - Include not only marketing copy, but also submission identity, disclosure preferences, and company-email rules from the intake step.
-   - Mirror review-friendly summary fields into the `ProductProfile` tab.
+```bash
+python3 scripts/init_intake.py \
+  --manifest data/backlink-helper/runs/<run-id>.json
+```
 
-6. Respect `WAITING_CONFIG` gating.
-   - While the run is `WAITING_CONFIG`, allow only non-writing setup work: sheet creation, target import, partial profile building, and light scouting.
-   - Do not start signup, submission, claim, or verification steps that would force guessing company facts, contact identity, or disclosure policy.
-   - When the missing intake arrives, update the profile first, then resume execution.
+If `required_missing` is non-empty:
 
-7. Scout before submitting.
-   - Read `references/strategy-rules.md`.
-   - Prefer built-in browser control for public reconnaissance.
-   - Escalate to Browser Relay for Google OAuth, authenticated flows, and pages that depend on a real session.
-   - Persist scouting results into both Sheet and local task state.
+- ask the user for those fields immediately in natural Chinese
+- do not expose raw schema keys to the user unless the user explicitly wants the low-level format
+- use semantic understanding to map the user's natural-language reply back into the structured fields
+- do not scout target sites yet
+- do not open submission pages yet
+- do not attempt signup, login, or submission
+- do not switch to other browser tools to continue anyway
 
-8. Compile replayable site memory when a path looks reusable.
-   - Read `references/browser-use-fast-path.md` and `references/account-registry.md` when a site appears stable enough for reuse.
-   - Reuse existing per-domain accounts before opening a new signup path.
-   - Compile the discovered path into a site playbook with field mappings, direct steps, result checks, and fallback route.
-   - Validate the playbook before promoting it into a fast path.
+4. Run environment preflight and inspect the default provider.
 
-9. Prepare a compact worker brief before execution.
-   - Generate a `worker-brief.json` with `scripts/prepare_worker_brief.py`.
-   - Put only the current counts, top candidate rows, compact product profile, and a few recent events into the brief.
-   - Do not make each worker reread the whole manifest, event log, and profile history.
+```bash
+python3 scripts/preflight.py \
+  --manifest data/backlink-helper/runs/<run-id>.json \
+  --bb-mode auto
+```
 
-9. Execute as small-batch drain workers.
-   - Do not ask one worker to process the whole batch.
-   - Acquire the batch lease before claiming rows.
-   - Process up to 3 executable tasks in one run, but allow at most 1 deep submit path.
-   - Treat the other slots as fast scout / fast park work.
-   - Keep a total worker budget of roughly 15 minutes and checkpoint after each meaningful phase change.
+`bb-mode` meanings:
 
-10. Keep the batch non-blocking.
-   - On CAPTCHA, Cloudflare challenge, payment walls, reciprocal backlink requirements, phone verification, suspicious flows, or manual-content requirements:
-     - update the current row and local task state
-     - emit the fixed `[WB-ROW]` line
-     - park the row quickly instead of burning the whole worker budget
-     - continue with another task in the same worker run when safe
-   - For reciprocal backlink / link-exchange requirements specifically:
-     - record the site as a later-review candidate
-     - do not proactively submit or auto-accept the exchange
-     - leave enough evidence for later manual selection
+- `auto`: always use standalone extension mode in Codex; never auto-route into OpenClaw
+- `openclaw`: only for runs that are actually executing inside OpenClaw; do not use this from Codex
+- `standalone_extension`: use direct CLI mode against the real Chrome bridge
+- `mcp`: record MCP intent, but current worker does not execute through MCP yet
+- `disabled`: skip bb-browser entirely and default to `dry-run`
 
-11. Separate worker execution from summary/watchdog reporting.
-   - Worker runs should focus on the selected small batch plus local state updates.
-   - Summary/watchdog runs should inspect progress, report status, reclaim stale leases/tasks, and only trigger recovery when work is actually stuck.
-   - Heartbeat is only for watch-dogging or reminders; do not use heartbeat as the primary execution engine.
+## Browser Routing Rules
 
-12. Learn after every meaningful result.
-   - On success, create or update a site playbook locally.
-   - When a row reaches `SUBMITTED`, `PENDING_EMAIL`, `VERIFIED`, or an already-listed outcome, call `scripts/task_store.py finish ... --submission-ledger <manifest.submission_ledger_path> --promoted-url <canonical promoted url>` so later runs do not resubmit the same promoted site to the same target.
-   - When multiple similar sites succeed, promote them into a pattern playbook.
-   - When a run stalls because setup info was missing, improve the intake checklist instead of relying on repeated ad-hoc questioning.
-   - Do not let the skill rewrite its own core rules; learn as data, not as autonomous policy changes.
+- Prefer `bb-browser` for any real submission, login, OAuth, or authenticated browser flow.
+- In Codex, never auto-invoke OpenClaw just because `bb-browser` supports `--openclaw`.
+- In Codex, if `bb-mode=openclaw` is requested anyway, preflight must stop and tell the operator to use `standalone_extension` or move the whole run into OpenClaw.
+- Do not switch to Chrome DevTools / `agent-browser` / other browser tooling for submission execution unless:
+  - the user explicitly asks for that tool, or
+  - `bb-browser` mode is disabled, or
+  - the task is read-only reconnaissance rather than real submission.
+- If `bb-browser` preflight fails, stop and report the failure clearly. Do not silently continue the same submission flow with a different browser stack.
 
-13. Finish cleanly.
-   - Emit `[WB-SUMMARY]` at the end of a summary/watchdog cycle.
-   - Emit `[WB-HALT]` only for infrastructure-wide failures that make continuing unsafe or impossible.
+5. Import the target list and apply cross-run dedupe.
 
-## Tool selection
+```bash
+python3 scripts/task_store.py init \
+  --run-id "<run-id>" \
+  --targets-file targets.txt \
+  --promoted-url "https://example.com"
+```
 
-- Built-in browser control: lightweight scouting, public page reading, non-auth discovery
-- Browser Relay: Google OAuth, authenticated sessions, complex JS flows, shared human browser state
-- Gog / Gmail: constrained verification-email lookups only; never roam the whole inbox without need
-- Exec + bundled scripts: normalization, run bootstrapping, task state persistence, status formatting, playbook scaffolding
+6. Drain the queue in small, resumable worker cycles.
+   Claim one row, inspect the current playbook and account memory, submit or park that row, persist the result, then claim the next row.
 
-## Browser strategy
+7. Scout only when memory is missing.
 
-- Short term: use Relay selectively for hard auth/session flows.
-- Medium term: prefer a managed browser profile for unattended execution.
-- Long term: avoid making the extension relay the only recovery path for batch execution.
+```bash
+python3 scripts/scout_target.py \
+  --url "https://target-site.com" \
+  --deep \
+  --out /tmp/target-scout.json
+```
 
-## Non-negotiable rules
+8. Convert the first scout into reusable memory.
 
-- Never block the whole batch on one row unless the infrastructure is broken.
-- Never store passwords in Google Sheet or plaintext playbooks.
-- Never auto-pay, auto-accept reciprocal backlink requirements, or attempt CAPTCHA bypasses.
-- Never invent product claims; use the promoted-site profile as the source of truth.
-- Never treat sheet state as the canonical playbook body; playbook bodies live locally.
-- Never treat chat context as the only queue; always persist task state locally.
-- Never rely on one giant uninterrupted batch run when single-URL task recovery is possible.
-- Never start external-write steps when the run is still `WAITING_CONFIG`.
+```bash
+python3 scripts/scaffold_playbook.py \
+  --scout-file /tmp/target-scout.json
+```
 
-## Bundled scripts
+9. Build a compact worker brief before execution.
 
-- `scripts/bootstrap_run.py` — create runtime directories, a run manifest, and expose the shared submission-ledger path
-- `scripts/normalize_targets.py` — normalize/dedupe txt inputs into structured rows
-- `scripts/render_status.py` — render fixed `[WB-*]` status lines
-- `scripts/scaffold_playbook.py` — create a site/pattern playbook stub in local storage
-- `scripts/compile_site_playbook.py` — create/update a site playbook with execution-mode, field-map, direct-step, and fallback metadata
-- `scripts/validate_site_playbook.py` — validate a site playbook before trusting it as a fast path
-- `scripts/run_site_playbook.py` — replay a `browser_use_direct` playbook against a product profile
-- `scripts/select_execution_plan.py` — choose route / execution_mode / automation_disposition from task + playbook + account-registry state
-- `scripts/browser_use_safe.sh` — hardened `browser-use` CLI wrapper with env loading, reset, retry, and log capture
-- `scripts/browser_use_smoke.sh` — smoke-test the direct CLI lane before rollout or after environment changes
-- `scripts/account_registry.py` — persist reusable per-domain account metadata without storing raw passwords in playbooks
-- `scripts/task_store.py` — initialize, claim, checkpoint, finish, summarize tasks, select next candidates, manage the batch lease, and maintain the cross-run submission ledger
-- `scripts/prepare_worker_brief.py` — generate a compact `worker-brief.json` so each worker reads only the top candidates and minimal profile context
-- `scripts/update_run_manifest.py` — refresh the compact run manifest summary, counts, and recent notes without keeping an ever-growing note history
+```bash
+python3 scripts/prepare_worker_brief.py \
+  --store data/backlink-helper/tasks/<run-id>.json \
+  --task-id "<task-id>" \
+  --profile data/backlink-helper/profiles/example.com.json
+```
+
+10. Drain one runnable task through the actual worker entrypoint.
+
+```bash
+python3 scripts/run_next.py \
+  --manifest data/backlink-helper/runs/<run-id>.json \
+  --provider auto
+```
+
+11. Record reusable memory immediately after each meaningful result.
+   On success, update the site playbook and submission ledger.
+   On account creation, update the account registry.
+   On email verification, keep the mailbox account and verification style in memory.
+
+## Operating Rules
+
+- Always probe the promoted site first, even if the user only gave a homepage URL.
+- Always run `scripts/init_intake.py` before the first real submission worker.
+- Always stop and ask for missing intake fields before scouting targets if intake is incomplete.
+- Always inspect the `preflight.default_provider` before expecting real-submit execution.
+- Always build the submitted URL through `scripts/build_utm_url.py`.
+- Always check the existing site playbook before probing a known target again.
+- Always check the account registry before opening a new signup flow.
+- Always park one blocked row and continue with the rest of the list.
+- Never submit the same promoted site to the same target twice.
+- Never bypass Cloudflare, reCAPTCHA, hCaptcha, or managed anti-bot walls.
+- Never invent product claims, prices, customers, or company facts.
+- Never start submit/signup/verify steps while the run is still `WAITING_CONFIG`.
+- Never route a real submission flow into Chrome DevTools or another browser stack just because `bb-browser` is not ready.
+
+## Route Preference
+
+Prefer routes in this order unless the target site clearly forces something else:
+
+1. Exact site playbook replay
+2. Reuse existing site account
+3. No-auth direct submit
+4. Email signup
+5. Google OAuth
+6. Park the row for later review
+
+Email signup is preferred over OAuth when both are equally practical. OAuth is allowed when the site strongly prefers it and the scopes look normal.
+
+## Continuous Execution Model
+
+Treat one target URL as one recoverable task. Keep moving without asking the user after every row.
+
+- `READY`: can be worked now
+- `RUNNING`: currently claimed by a worker
+- `WAITING_EMAIL`: waiting for verification mail or magic link
+- `WAITING_HUMAN`: worth doing, but a human decision or credential is required
+- `RETRYABLE`: retry later
+- `DONE`: terminal success
+- `SKIPPED`: terminal non-success
+
+When a row hits a blocker, update the task state, add a short note, and continue with another row. Do not keep burning tokens on the same wall.
+
+## Promoted-Site Material Pack
+
+The promoted-site profile is not optional. Build it early and refresh it when forms reveal missing fields.
+
+The material pack should eventually contain:
+
+- canonical URL
+- product name
+- short and medium descriptions
+- category and tags
+- core features
+- target audience and use cases
+- pricing page
+- privacy or trust page
+- contact email choices
+- founder or company facts only when evidence-backed
+
+Use `scripts/probe_promoted_site.py` first. Re-run it with additional `--need` values when later forms expose missing facts.
+
+## Mail And Verification
+
+Use `scripts/gmail_watch.py` as the only default mail-reading path for automated verification flows. It wraps the Google Workspace `gog` CLI and is suitable for:
+
+- verification links
+- magic links
+- one-time codes
+- welcome mails that confirm account creation
+
+If `gog` is missing or not configured, mark the row or run as waiting for config instead of pretending the mailbox step is complete.
+
+## CAPTCHA Boundary
+
+Use the policy in `references/captcha-policy.md`.
+
+Short version:
+
+- simple text, math, or obvious single-image prompts: one careful attempt is allowed
+- Cloudflare, Turnstile, reCAPTCHA, hCaptcha, or managed challenge loops: stop and park
+
+## Bundled Scripts
+
+- `scripts/bootstrap_runtime.py`: create the runtime layout and run manifest
+- `scripts/build_utm_url.py`: create tracked submission URLs
+- `scripts/probe_promoted_site.py`: build or refresh the promoted-site material pack
+- `scripts/init_intake.py`: merge inferred profile facts with operator-provided required fields and enforce `WAITING_CONFIG`
+- `scripts/preflight.py`: verify local execution prerequisites such as `bb-browser`, `gog`, `node`, and `pnpm`
+- `scripts/scout_target.py`: scout a target site and classify forms, auth, anti-bot, and likely submit entrypoints
+- `scripts/scaffold_playbook.py`: turn a fresh scout result into a reusable site playbook stub
+- `scripts/prepare_worker_brief.py`: compress task, profile, playbook, and account memory into one worker-ready brief
+- `scripts/task_store.py`: initialize, claim, checkpoint, finish, and summarize task state
+- `scripts/playbook_memory.py`: persist and reuse per-site submission playbooks
+- `scripts/account_registry.py`: persist reusable target-site accounts
+- `scripts/select_execution_plan.py`: choose the next route from task, playbook, and account memory
+- `scripts/gmail_watch.py`: find verification emails, links, and OTP codes through `gog`
+- `scripts/run_next.py`: claim one runnable task, scout it, select a route, and execute or park it
+
+## Execution Core
+
+Install the JavaScript execution layer once before using browser-backed submission:
+
+```bash
+pnpm install
+```
+
+The Node execution core lives under `packages/execution-core/` and is responsible for:
+
+- provider abstraction (`bb-browser`, `dry-run`, `manual`)
+- adapter selection for known sites
+- generic form-submit fallback
+- cheap scout output for browser-oriented paths

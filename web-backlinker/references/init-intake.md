@@ -2,158 +2,122 @@
 
 ## Goal
 
-Collect the promoted-site facts, submission identities, and policy boundaries up front so the batch does not stall later on missing basics.
+Collect the promoted-site facts, submission identities, and policy boundaries before the first real submission worker runs.
 
-Use this before the first real worker run of a campaign.
+The point is simple:
+
+- do not let a worker discover halfway through that there is no approved email
+- do not guess disclosure policy on a live submission form
+- do not start account/signup flows when the company has not approved them
 
 ## Core rule
 
-If the required intake is incomplete:
-- still allow sheet creation and target import
-- persist the partial promoted-site profile locally
-- mark the run `WAITING_CONFIG`
-- do not start normal submission workers yet
+If required intake is incomplete:
 
-Only move into normal execution after the required intake is filled.
+- persist whatever is already known
+- keep the run in `WAITING_CONFIG`
+- allow setup and scouting only
+- block real submit/signup/verify workers
 
-## Required intake
+## Required fields
 
 ### Product identity
+
 - `product_name`
 - `canonical_url`
-- `company_name` if different from product name
 - `one_liner`
 - `short_description`
-- `medium_description` or approved `150-300 word intro`
-
-### Company facts
-- `based_in_city`
-- `based_in_region`
-- `based_in_country`
-- `founded_year`
-- `launch_date`
-- `team_size`
-- `funding_status`
-- `revenue_stage`
-- `mrr_disclosure`
-  - exact value, range, `not_disclosed`, or `pre_revenue`
+- `medium_description`
 
 ### Categorization
+
 - `category_primary`
-- `category_secondary`
-- `markets` / tags
 - `target_audience`
 - `use_cases`
 
 ### Submission identity
+
 - `submitter_name`
-- `submitter_first_name`
-- `submitter_last_name`
-- `submitter_phone`
 - `primary_email`
 - `company_email`
-- `personal_fallback_email`
-- `founder_name` when public founder identity may be needed
+- `preferred_verification_email`
 
 ### Policy boundaries
-- whether Gmail signup is allowed
-- whether company-domain email signup is allowed
-- preferred company email for verification / claim flows
-- preferred auth order when multiple routes exist (default: no-auth > email signup > Google OAuth fallback)
-- whether existing site accounts may be reused across later submissions
-- whether MRR may be disclosed
-- whether founder identity may be disclosed
-- whether phone/address may be disclosed
-- whether OAuth login is allowed
-- whether manual browser / CAPTCHA completion is allowed
-- whether paid listings are allowed
-- whether reciprocal-backlink listings are allowed
 
-## Recommended intake
+- `allow_gmail_signup`
+- `allow_company_email_signup`
+- `allow_oauth_login`
+- `allow_manual_captcha`
+- `allow_paid_listing`
+- `allow_reciprocal_backlink`
+- `allow_founder_identity_disclosure`
+- `allow_phone_disclosure`
+- `allow_address_disclosure`
 
-Collect these when available because they unblock many directories later:
-- logo path or URL
-- screenshot path or URL
-- pricing page URL
-- privacy/security page URL
-- social links
-- ZIP/address
-- founder title
-- disclosure rule for traffic/download counts
-- disclosure rule for tech stack
+## Suggested Prompt Template
 
-## Suggested prompt template
+Ask for the missing fields as one compact initialization payload before any target-site scouting or submission.
 
-Ask for a compact initialization payload before starting the real run:
+Prefer natural Chinese phrasing for normal users. The agent should understand answers semantically and map them back into structured fields; the script should remain the validator and store, not the user-facing UX layer.
+
+Use this template:
 
 - Product name:
 - Canonical URL:
 - Company name:
 - One-liner:
 - Short description:
-- 150-300 word intro:
-- Based in city:
-- Based in region/state:
-- Based in country:
-- Founded year:
-- Launch date:
-- Team size:
-- Funding:
-- Revenue stage:
-- MRR:
+- Medium description:
 - Primary category:
-- Secondary category:
-- Markets/tags:
 - Target audience:
 - Use cases:
 - Submitter full name:
-- Submitter phone:
 - Primary email:
-- Company-domain email:
-- Personal fallback email:
-- Founder name:
+- Company email:
+- Preferred verification email:
 - Allow Gmail signup: yes/no
 - Allow company email signup: yes/no
-- Preferred verification email:
-- Allow MRR disclosure: yes/no
-- Allow founder identity disclosure: yes/no
-- Allow phone/address disclosure: yes/no
 - Allow OAuth login: yes/no
-- Allow CAPTCHA/manual browser: yes/no
+- Allow manual CAPTCHA / browser takeover: yes/no
 - Allow paid listing: yes/no
 - Allow reciprocal backlink: yes/no
+- Allow founder identity disclosure: yes/no
+- Allow phone disclosure: yes/no
+- Allow address disclosure: yes/no
 
-## Normalization rules
+## Recommended fields
 
-Normalize user answers into profile-friendly values:
-- expand country/state names when obvious
-- map funding answers like "none" to `Bootstrapped / no external funding`
-- map revenue-stage answers like "not funded" separately from funding status; do not conflate them
-- split submitter full name into first/last when safe
-- preserve both raw user wording and normalized value when the wording matters
+- `company_name`
+- `founder_name`
+- `founding_year`
+- `launch_date`
+- `based_in_country`
+- `pricing_url`
+- `privacy_url`
+- `logo_url`
+- `screenshot_url`
+- `markets`
 
-## Execution gating
+## Safe actions while waiting
 
-### Safe to proceed before full intake
-These can still happen while `WAITING_CONFIG`:
-- create the run manifest
-- create the Google Sheet
-- import and dedupe targets
-- perform light scouting that does not write externally
-- build a partial promoted-site profile
+- bootstrap runtime
+- import targets
+- probe the promoted site
+- optionally normalize the target list
 
-### Do not proceed before full intake
-Do not do these until required intake is complete:
-- account signup
+## Blocked actions while waiting
+
+- target-site scouting that is part of a real submission run
+- account creation
+- login flows
 - submission POSTs
-- email verification steps
-- profile claim/ownership flows
-- any row that would force guessing company facts, contact identity, or disclosure policy
+- verification email clicks
+- ownership claim flows
 
-## Resume behavior
+## Operator workflow
 
-When missing fields are later supplied:
-- update the local promoted-site profile first
-- record the new values in memory/playbook notes if they are likely reusable
-- change the run from `WAITING_CONFIG` to `EXECUTING`
-- then resume workers normally
+1. Run `bootstrap_runtime.py`
+2. Run `probe_promoted_site.py`
+3. Run `init_intake.py` with the manifest path
+4. Fill missing required fields
+5. Only after the manifest leaves `WAITING_CONFIG`, start `run_next.py`
