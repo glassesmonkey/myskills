@@ -1,0 +1,7 @@
+data/
+scripts/__pycache__/
+tests/__pycache__/
+node_modules/
+packages/execution-core/node_modules/
+packages/execution-core/.tmp/
+*.pyc

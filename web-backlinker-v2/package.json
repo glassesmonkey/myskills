@@ -1,0 +1,14 @@
+{
+  "name": "backlink-helper",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.4.1",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test:node": "pnpm --filter execution-core test",
+    "test:python": "python3 -m unittest discover -s tests/python -p 'test_*.py'",
+    "test": "pnpm test:node && pnpm test:python"
+  }
+}

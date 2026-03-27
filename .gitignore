@@ -8,6 +8,8 @@
 !web-access/**
 !web-backlinker/
 !web-backlinker/**
+!web-backlinker-v2/
+!web-backlinker-v2/**
 !web-cafe-daily-report/
 !web-cafe-daily-report/**
 !web-reader/
