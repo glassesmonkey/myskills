@@ -41,10 +41,25 @@ async function run() {
     const plan = readJson(args['plan-file'], {});
     const credentials = readJson(args['credentials-file'], {});
     const adapter = resolveAdapter(task, args.adapter || 'auto');
-    const provider = chooseProvider(args.provider || (plan.execution_mode === 'manual' ? 'manual' : ''));
+    const providerOptions = {
+      cdpUrl: args['cdp-url'] || '',
+      playwrightWsUrl: args['playwright-ws-url'] || '',
+      browserRuntime: {
+        cdp_url: args['cdp-url'] || '',
+        playwright_ws_url: args['playwright-ws-url'] || '',
+      },
+    };
+    const requestedProvider = args.provider || (plan.execution_mode === 'manual' ? 'manual' : '');
+    const provider = chooseProvider(requestedProvider, providerOptions);
     const result = await adapter.submit({
       provider,
       bbMode: args['bb-mode'] || 'auto',
+      cdpUrl: args['cdp-url'] || '',
+      playwrightWsUrl: args['playwright-ws-url'] || '',
+      browserRuntime: {
+        cdp_url: args['cdp-url'] || '',
+        playwright_ws_url: args['playwright-ws-url'] || '',
+      },
       task,
       brief,
       plan,

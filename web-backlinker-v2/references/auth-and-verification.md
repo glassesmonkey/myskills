@@ -34,13 +34,15 @@ After a successful signup:
 - remember whether the site sends a link or code
 - remember any stable username rule
 
-## Google OAuth
+## OAuth (Google / Facebook / similar)
 
 OAuth is allowed when:
 
 - the site clearly prefers it
 - the scopes look normal for basic account creation or login
 - the user has approved OAuth as an allowed route
+
+When the shared browser session already has a live Google or Facebook login, treat that as a normal reusable asset instead of parking the row pre-emptively. The worker should attempt the provider button once and continue the submission flow if the site returns to a live submit surface.
 
 OAuth is not a license to fight anti-bot systems. If OAuth is wrapped inside Cloudflare or other managed challenge layers, park the row.
 

@@ -24,13 +24,88 @@ SITE_TYPE_RULES = {
 }
 
 SUBMIT_HINTS = ("submit", "add", "list", "suggest", "contribute", "launch", "ship")
-HARD_ANTI_BOT = {
-    "cloudflare": ["cloudflare", "just a moment"],
-    "turnstile": ["turnstile"],
-    "recaptcha": ["recaptcha", "g-recaptcha"],
-    "hcaptcha": ["hcaptcha"],
-    "managed": ["verify you are human", "checking your browser", "bot protection"],
-}
+CLOUDFLARE_ACTIVE_PATTERNS = [
+    "just a moment",
+    "checking your browser",
+    "/cdn-cgi/challenge-platform/",
+    "cf-chl-",
+    "cf-browser-verification",
+]
+MANAGED_CHALLENGE_PATTERNS = [
+    "verify you are human",
+    "verify that you are human",
+    "verify you're human",
+    "bot protection",
+    "security check",
+    "press and hold",
+]
+TURNSTILE_WIDGET_PATTERNS = [
+    "cf-turnstile",
+    "challenges.cloudflare.com/turnstile",
+    "data-sitekey",
+]
+RECAPTCHA_WIDGET_PATTERNS = [
+    "g-recaptcha",
+    'name="g-recaptcha-response"',
+    "google.com/recaptcha/api2",
+    "www.google.com/recaptcha/api2",
+    "grecaptcha.render",
+]
+HCAPTCHA_WIDGET_PATTERNS = [
+    "h-captcha",
+    "js.hcaptcha.com",
+    "hcaptcha.com/1/api.js",
+]
+CLOUDFLARE_VENDOR_PATTERNS = [
+    "static.cloudflareinsights.com",
+    "data-cf-beacon",
+]
+RECAPTCHA_VENDOR_PATTERNS = [
+    "google.com/recaptcha/api.js",
+    "www.google.com/recaptcha/api.js",
+    "grecaptcha",
+]
+HCAPTCHA_VENDOR_PATTERNS = [
+    "hcaptcha.com/1/api.js",
+    "js.hcaptcha.com",
+]
+CAPTCHA_SIMPLE_IMAGE_PATTERNS = [
+    "captcha",
+    "security code",
+    "verification code",
+    "type the characters",
+]
+CAPTCHA_SIMPLE_TEXT_PATTERNS = [
+    "captcha",
+    "security code",
+    "verification code",
+]
+RECIPROCAL_BACKLINK_PATTERNS = [
+    "reciprocal backlink",
+    "reciprocal link",
+    "backlink required",
+    "require a backlink",
+    "requires a backlink",
+    "require backlink",
+    "requires backlink",
+    "must link to us",
+    "link back to us",
+    "backlink to us",
+    "exchange links",
+    "link exchange",
+    "swap links",
+    "add our link",
+    "place our link",
+    "add our badge",
+    "place our badge",
+]
+RECIPROCAL_BADGE_PATTERNS = [
+    "our badge",
+    "put this badge on your website",
+    "place this badge on your website",
+    "add the following code to your website",
+    "copy and paste this code into your website",
+]
 
 
 class TargetParser(HTMLParser):
@@ -153,7 +228,7 @@ def classify_site_type(text: str) -> str:
 def detect_auth_type(text: str, links: list[dict[str, str]], forms: list[dict[str, Any]]) -> tuple[str, list[str], bool]:
     lowered = text.lower()
     oauth: list[str] = []
-    for provider in ("google", "github", "twitter", "linkedin"):
+    for provider in ("google", "facebook", "github", "twitter", "linkedin"):
         provider_patterns = [
             f"sign in with {provider}",
             f"log in with {provider}",
@@ -170,40 +245,168 @@ def detect_auth_type(text: str, links: list[dict[str, str]], forms: list[dict[st
         if has_oauth_phrase or has_oauth_link:
             oauth.append(provider)
 
-    has_email_field = any(
-        field.get("type", "").lower() == "email" or "email" in " ".join(
-            [field.get("name", ""), field.get("placeholder", ""), field.get("label", ""), field.get("id", "")]
-        ).lower()
+    field_descriptors = [
+        (
+            field,
+            " ".join([field.get("name", ""), field.get("placeholder", ""), field.get("label", ""), field.get("id", "")]).lower(),
+        )
         for form in forms
         for field in form.get("fields", [])
-    )
-    if forms and not oauth:
-        return "none", oauth, False
+    ]
+    has_email_field = any(field.get("type", "").lower() == "email" or "email" in field_text for field, field_text in field_descriptors)
+    has_password_field = any(field.get("type", "").lower() == "password" or "password" in field_text for field, field_text in field_descriptors)
+    auth_words = ("sign up", "register", "create account", "log in", "login", "sign in", "password", "forgot your password")
+
     if oauth:
-        return "google_oauth" if "google" in oauth else "unknown", oauth, True
+        if "google" in oauth:
+            return "google_oauth", oauth, True
+        if "facebook" in oauth:
+            return "facebook_oauth", oauth, True
+        return "oauth", oauth, True
     if "magic link" in lowered or "email me a link" in lowered:
         return "magic_link", oauth, True
-    if has_email_field and any(word in lowered for word in ("sign up", "register", "create account", "log in", "login")):
+    if has_password_field and any(word in lowered for word in auth_words):
+        return "email_signup", oauth, True
+    if has_email_field and any(word in lowered for word in auth_words):
         return "email_signup", oauth, True
     if forms:
         return "none", oauth, False
     return "unknown", oauth, False
 
 
-def detect_antibot(text: str, html: str) -> tuple[str, str]:
-    lowered = f"{text} {html}".lower()
-    for anti_bot, keywords in HARD_ANTI_BOT.items():
-        if any(keyword in lowered for keyword in keywords):
-            return anti_bot, "managed"
+def _has_any(lowered: str, patterns: list[str]) -> bool:
+    return any(pattern in lowered for pattern in patterns)
 
-    if "captcha" in lowered:
-        if re.search(r"\bwhat is\s+\d+\s*[\+\-*x]\s*\d+\b", lowered):
-            return "none", "simple_math"
-        if "<img" in html.lower():
-            return "none", "simple_image"
-        return "none", "simple_text"
 
-    return "none", "none"
+def detect_security_signals(text: str, html: str) -> dict[str, Any]:
+    lowered_text = str(text or "").lower()
+    lowered_html = str(html or "").lower()
+    combined = f"{lowered_text} {lowered_html}"
+    visible_or_form_captcha = bool(
+        re.search(r"(?<!re)(?<!h)captcha", lowered_text)
+        or re.search(r"(?<!re)(?<!h)captcha", lowered_html.replace("g-recaptcha", " ").replace("hcaptcha", " "))
+           and any(marker in lowered_html for marker in ("name=\"captcha", "id=\"captcha", "placeholder=\"captcha", "security code", "verification code"))
+    )
+
+    vendors: list[str] = []
+    if _has_any(lowered_html, CLOUDFLARE_VENDOR_PATTERNS):
+        vendors.append("cloudflare-insights")
+    if _has_any(lowered_html, RECAPTCHA_VENDOR_PATTERNS):
+        vendors.append("recaptcha-script")
+    if _has_any(lowered_html, HCAPTCHA_VENDOR_PATTERNS):
+        vendors.append("hcaptcha-script")
+
+    evidence: list[str] = []
+
+    if _has_any(combined, CLOUDFLARE_ACTIVE_PATTERNS):
+        return {
+            "anti_bot": "cloudflare",
+            "captcha_tier": "managed",
+            "security_vendors": vendors,
+            "challenge_active": True,
+            "challenge_evidence": ["cloudflare-active-challenge"],
+        }
+
+    if _has_any(combined, MANAGED_CHALLENGE_PATTERNS):
+        return {
+            "anti_bot": "managed",
+            "captcha_tier": "managed",
+            "security_vendors": vendors,
+            "challenge_active": True,
+            "challenge_evidence": ["managed-human-verification-copy"],
+        }
+
+    if _has_any(lowered_html, TURNSTILE_WIDGET_PATTERNS) and ("turnstile" in lowered_html or "cf-turnstile" in lowered_html):
+        evidence.append("turnstile-widget")
+        return {
+            "anti_bot": "turnstile",
+            "captcha_tier": "managed",
+            "security_vendors": unique_notes(vendors + ["turnstile-widget"]),
+            "challenge_active": True,
+            "challenge_evidence": evidence,
+        }
+
+    if _has_any(lowered_html, RECAPTCHA_WIDGET_PATTERNS):
+        evidence.append("recaptcha-widget")
+        return {
+            "anti_bot": "recaptcha",
+            "captcha_tier": "managed",
+            "security_vendors": unique_notes(vendors),
+            "challenge_active": True,
+            "challenge_evidence": evidence,
+        }
+
+    if _has_any(lowered_html, HCAPTCHA_WIDGET_PATTERNS):
+        evidence.append("hcaptcha-widget")
+        return {
+            "anti_bot": "hcaptcha",
+            "captcha_tier": "managed",
+            "security_vendors": unique_notes(vendors),
+            "challenge_active": True,
+            "challenge_evidence": evidence,
+        }
+
+    if re.search(r"\bwhat is\s+\d+\s*[\+\-*x]\s*\d+\b", combined):
+        return {
+            "anti_bot": "none",
+            "captcha_tier": "simple_math",
+            "security_vendors": unique_notes(vendors),
+            "challenge_active": False,
+            "challenge_evidence": ["simple-math-captcha"],
+        }
+
+    if visible_or_form_captcha and _has_any(combined, CAPTCHA_SIMPLE_IMAGE_PATTERNS):
+        image_like = any(
+            pattern in lowered_html
+            for pattern in (
+                "captcha-image",
+                "captcha_img",
+                "captchaimg",
+                "captcha.jpg",
+                "captcha.png",
+                "captcha.gif",
+                "security-code",
+                "verification-code",
+                "<canvas",
+            )
+        )
+        if image_like:
+            return {
+                "anti_bot": "none",
+                "captcha_tier": "simple_image",
+                "security_vendors": unique_notes(vendors),
+                "challenge_active": False,
+                "challenge_evidence": ["simple-image-captcha"],
+            }
+
+    if visible_or_form_captcha and _has_any(lowered_text, CAPTCHA_SIMPLE_TEXT_PATTERNS):
+        return {
+            "anti_bot": "none",
+            "captcha_tier": "simple_text",
+            "security_vendors": unique_notes(vendors),
+            "challenge_active": False,
+            "challenge_evidence": ["simple-text-captcha"],
+        }
+
+    return {
+        "anti_bot": "none",
+        "captcha_tier": "none",
+        "security_vendors": unique_notes(vendors),
+        "challenge_active": False,
+        "challenge_evidence": [],
+    }
+
+
+def detect_reciprocal_backlink_requirement(text: str, html: str) -> dict[str, Any]:
+    combined = f"{text} {html}".lower()
+    evidence = [pattern for pattern in RECIPROCAL_BACKLINK_PATTERNS if pattern in combined]
+    badge_required = any(pattern in combined for pattern in RECIPROCAL_BADGE_PATTERNS)
+    if badge_required and any(token in combined for token in ("backlink", "link back", "reciprocal", "exchange links", "link exchange")):
+        evidence.append("badge/html snippet")
+    return {
+        "required": bool(evidence),
+        "evidence": unique_notes(evidence, limit=6),
+    }
 
 
 def find_submit_links(links: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -258,7 +461,10 @@ def main() -> int:
         scout_page["links"],
         scout_page["forms"],
     )
-    anti_bot, captcha_tier = detect_antibot(f"{root_page['page_text']} {scout_page['page_text']}", scout_page["html"])
+    security = detect_security_signals(f"{root_page['page_text']} {scout_page['page_text']}", scout_page["html"])
+    reciprocal = detect_reciprocal_backlink_requirement(f"{root_page['page_text']} {scout_page['page_text']}", scout_page["html"])
+    anti_bot = security["anti_bot"]
+    captcha_tier = security["captcha_tier"]
     field_map = guess_field_map(scout_page["forms"])
     candidate_submit_url = followed_submit_link or (submit_links[0]["href"] if submit_links else scout_page["url"])
 
@@ -273,6 +479,12 @@ def main() -> int:
         "requires_login": requires_login,
         "anti_bot": anti_bot,
         "captcha_tier": captcha_tier,
+        "requires_reciprocal_backlink": reciprocal["required"],
+        "blocker_type": "reciprocal_backlink_required" if reciprocal["required"] else "",
+        "reciprocal_evidence": reciprocal["evidence"],
+        "security_vendors": security["security_vendors"],
+        "challenge_active": security["challenge_active"],
+        "challenge_evidence": security["challenge_evidence"],
         "candidate_submit_url": candidate_submit_url,
         "submit_links": submit_links[:10],
         "forms": scout_page["forms"],
@@ -288,6 +500,10 @@ def main() -> int:
                 f"oauth providers: {', '.join(oauth_providers)}" if oauth_providers else "",
                 f"anti-bot: {anti_bot}" if anti_bot != "none" else "",
                 f"captcha tier: {captcha_tier}" if captcha_tier != "none" else "",
+                "reciprocal backlink required" if reciprocal["required"] else "",
+                f"reciprocal evidence: {', '.join(reciprocal['evidence'])}" if reciprocal["evidence"] else "",
+                f"security vendors: {', '.join(security['security_vendors'])}" if security["security_vendors"] else "",
+                f"challenge evidence: {', '.join(security['challenge_evidence'])}" if security["challenge_evidence"] else "",
             ],
             limit=12,
         ),

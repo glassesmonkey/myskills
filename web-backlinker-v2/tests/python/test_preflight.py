@@ -14,31 +14,52 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(resolve_bb_mode("auto", False), "standalone_extension")
         self.assertEqual(resolve_bb_mode("mcp", True), "mcp")
 
-    def test_preflight_prefers_bb_browser_when_smoke_ok(self):
+    def test_preflight_prefers_browser_use_when_shared_cdp_ready(self):
         summary = derive_preflight_summary(
             {
                 "node": {"installed": True, "ok": True},
                 "pnpm": {"installed": True, "ok": True},
+                "browser_runtime": {"configured": True, "ok": True, "cdp_url": "http://127.0.0.1:9222"},
+                "browser_use": {"installed": True, "smoke_ok": True},
                 "bb_browser": {"installed": True, "smoke_ok": True, "resolved_mode": "standalone_extension"},
                 "gog": {"installed": True, "configured": True},
             }
         )
-        self.assertEqual(summary["default_provider"], "bb-browser")
+        self.assertEqual(summary["default_provider"], "browser-use-cli")
         self.assertEqual(summary["bb_browser_mode"], "standalone_extension")
         self.assertTrue(summary["ready_for_real_submit"])
         self.assertEqual(summary["warnings"], [])
 
-    def test_preflight_falls_back_to_dry_run_when_bb_browser_missing(self):
+    def test_preflight_falls_back_to_bb_browser_when_cdp_unconfigured(self):
         summary = derive_preflight_summary(
             {
                 "node": {"installed": True, "ok": True},
                 "pnpm": {"installed": True, "ok": True},
+                "browser_runtime": {"configured": False, "ok": False},
+                "browser_use": {"installed": True, "smoke_ok": False},
+                "bb_browser": {"installed": True, "smoke_ok": True, "resolved_mode": "standalone_extension"},
+                "gog": {"installed": True, "configured": False},
+            }
+        )
+        self.assertEqual(summary["default_provider"], "bb-browser")
+        self.assertTrue(summary["ready_for_real_submit"])
+        self.assertIn("gog_unconfigured", summary["warnings"])
+        self.assertNotIn("browser_cdp_unconfigured", summary["warnings"])
+
+    def test_preflight_falls_back_to_dry_run_when_no_browser_stack_ready(self):
+        summary = derive_preflight_summary(
+            {
+                "node": {"installed": True, "ok": True},
+                "pnpm": {"installed": True, "ok": True},
+                "browser_runtime": {"configured": False, "ok": False},
+                "browser_use": {"installed": False, "smoke_ok": False},
                 "bb_browser": {"installed": False, "smoke_ok": False, "resolved_mode": "disabled"},
                 "gog": {"installed": True, "configured": False},
             }
         )
         self.assertEqual(summary["default_provider"], "dry-run")
         self.assertFalse(summary["ready_for_real_submit"])
+        self.assertIn("browser_cdp_unconfigured", summary["warnings"])
         self.assertIn("bb_browser_missing", summary["warnings"])
         self.assertIn("gog_unconfigured", summary["warnings"])
 
@@ -47,6 +68,8 @@ class PreflightTests(unittest.TestCase):
             {
                 "node": {"installed": True, "ok": True},
                 "pnpm": {"installed": True, "ok": True},
+                "browser_runtime": {"configured": False, "ok": False},
+                "browser_use": {"installed": False, "smoke_ok": False},
                 "bb_browser": {"installed": True, "smoke_ok": False, "resolved_mode": "mcp"},
                 "gog": {"installed": True, "configured": True},
             }
@@ -60,6 +83,8 @@ class PreflightTests(unittest.TestCase):
             {
                 "node": {"installed": True, "ok": True},
                 "pnpm": {"installed": True, "ok": True},
+                "browser_runtime": {"configured": False, "ok": False},
+                "browser_use": {"installed": False, "smoke_ok": False},
                 "bb_browser": {
                     "installed": True,
                     "smoke_ok": False,

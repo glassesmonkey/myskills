@@ -30,6 +30,12 @@ From `glassesmonkey/myskills/web-backlinker`:
 
 ## What To Improve
 
+The new skill also adopts a single-brain browser architecture:
+
+- OpenClaw/Codex decides the route.
+- `browser-use` CLI handles exploration and light interaction through a shared CDP browser.
+- Playwright handles deterministic assertions and stable submit segments on that same browser.
+
 The new skill tightens six things:
 
 1. First-success memory is mandatory.

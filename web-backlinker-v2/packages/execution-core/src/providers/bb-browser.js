@@ -56,6 +56,10 @@ class BbPage {
     runBb(['eval', `document.querySelector('${escapeJs(selectorOrRef)}')?.click()`], this.options);
   }
 
+  async evaluate(script) {
+    return runBb(['eval', String(script)], this.options);
+  }
+
   async snapshot() {
     return runBb(['snapshot', '-i'], this.options);
   }
@@ -115,7 +119,7 @@ export async function openSession(options = {}) {
 
 export function isAvailable() {
   try {
-    execFileSync('which', ['bb-browser'], { encoding: 'utf8' });
+    execFileSync('bb-browser', ['--help'], { encoding: 'utf8', timeout: 5000 });
     return true;
   } catch {
     return false;

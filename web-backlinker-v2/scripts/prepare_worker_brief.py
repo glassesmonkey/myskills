@@ -11,6 +11,10 @@ from common import default_base_dir, domain_from_url, load_json, now_iso, normal
 from task_store import find_task, load_store
 
 
+def load_intake(path: Path) -> dict[str, Any]:
+    return load_json(path, {}) if path.exists() else {}
+
+
 def build_tracked_url(base_url: str, source: str, medium: str, campaign: str) -> str:
     parts = urlsplit(base_url)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
@@ -70,6 +74,8 @@ def main() -> int:
     store = load_store(store_path)
     task = find_task(store, args.task_id)
     profile = load_json(profile_path, {})
+    intake_path = profile_path.with_suffix(".intake.json")
+    intake = load_intake(intake_path)
     domain = task.get("domain") or domain_from_url(task.get("normalized_url", ""))
     playbook = load_playbook(playbooks_dir, domain)
     account = load_account(accounts_path, domain)
@@ -94,8 +100,11 @@ def main() -> int:
             "status": task.get("status", ""),
             "site_type": task.get("site_type", "unknown"),
             "auth_type": task.get("auth_type", "unknown"),
+            "oauth_providers": task.get("oauth_providers", []) or [],
             "anti_bot": task.get("anti_bot", "unknown"),
             "captcha_tier": task.get("captcha_tier", "unknown"),
+            "blocker_type": task.get("blocker_type", ""),
+            "requires_reciprocal_backlink": task.get("requires_reciprocal_backlink", False),
             "route": task.get("route", ""),
             "execution_mode": task.get("execution_mode", ""),
         },
@@ -107,6 +116,8 @@ def main() -> int:
             "short_description": profile.get("short_description", ""),
             "medium_description": profile.get("medium_description", ""),
             "contact_emails": contact_emails[:3],
+            "submitter_name": intake.get("submitter_name", ""),
+            "preferred_verification_email": intake.get("preferred_verification_email", ""),
             "feature_hints": (profile.get("materials", {}) or {}).get("feature_hints", [])[:6],
         },
         "playbook": {
@@ -125,12 +136,22 @@ def main() -> int:
             "browser_profile_ref": account.get("browser_profile_ref", ""),
             "status": account.get("status", ""),
         },
+        "policy": {
+            "allow_oauth_login": bool(intake.get("allow_oauth_login", False)),
+            "allow_gmail_signup": bool(intake.get("allow_gmail_signup", False)),
+            "allow_manual_captcha": bool(intake.get("allow_manual_captcha", False)),
+            "allow_paid_listing": bool(intake.get("allow_paid_listing", False)),
+            "allow_reciprocal_backlink": bool(intake.get("allow_reciprocal_backlink", False)),
+            "allow_phone_disclosure": bool(intake.get("allow_phone_disclosure", False)),
+            "allow_address_disclosure": bool(intake.get("allow_address_disclosure", False)),
+        },
         "missing_fields": missing_fields,
         "next_focus": unique_notes(
             [
                 "reuse matched playbook" if playbook else "",
                 "reuse matched account" if account else "",
                 "be ready for mailbox verification" if task.get("auth_type") in {"email_signup", "magic_link"} else "",
+                "decide whether to accept reciprocal backlink requirement" if task.get("requires_reciprocal_backlink") else "",
                 "park the row immediately on managed anti-bot" if task.get("anti_bot") not in {"", "none", "unknown"} else "",
             ],
             limit=10,
