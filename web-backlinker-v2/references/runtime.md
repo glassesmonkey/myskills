@@ -24,6 +24,20 @@
 13. Execute or park the row.
 14. Persist the outcome, then claim the next row.
 
+For unattended operation, wrap `run_next.py` in a small serial batch worker (`scripts/run_batch.py`) instead of asking one agent turn to loop forever. The batch worker should hold a run-level single-flight lock, process a few rows, then exit cleanly so cron can trigger the next batch later.
+
+## Browser Execution Default
+
+Run `scripts/preflight.py` before the first real worker cycle.
+
+When shared CDP is configured and healthy, the default provider is now `browser-use-cli` and the manifest records:
+
+- `preflight.browser_runtime.cdp_url`
+- `preflight.browser_runtime.playwright_ws_url`
+
+Use `browser-use` CLI for navigation/probing and reserve Playwright for deterministic steps on that same browser.
+Fall back to `bb-browser` only when shared CDP is unavailable or explicitly disabled.
+
 ## Why One Row At A Time
 
 The point is not slowness. The point is recoverability.
@@ -52,6 +66,7 @@ If that row fails halfway through, only that row should need recovery.
 - Claim one task at a time.
 - Checkpoint after every meaningful phase change.
 - Keep notes short and factual.
+- Continue probing a promising site autonomously until a real submit surface, a dead route, or a hard boundary is confirmed; do not stop just because the first page is only an intermediate pricing/login/plan step.
 - When a row is blocked, park it and move on.
 - Do not ask the user after every row.
 

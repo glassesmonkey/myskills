@@ -124,7 +124,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Claim one backlink task, plan it, and execute or park it.")
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--worker-id", default=f"worker-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}")
-    parser.add_argument("--provider", default="auto", choices=["auto", "bb-browser", "dry-run", "manual"])
+    parser.add_argument("--provider", default="auto", choices=["auto", "browser-use-cli", "bb-browser", "dry-run", "manual"])
     parser.add_argument("--lease-seconds", type=int, default=900)
     parser.add_argument("--include-waiting-email", action="store_true")
     parser.add_argument("--deep-scout", action="store_true")
@@ -152,10 +152,51 @@ def main() -> int:
             )
         )
         return 2
-    if args.provider in {"auto", "bb-browser"} and preflight:
-        checks = preflight.get("checks", {}) or {}
-        bb_check = checks.get("bb_browser", {}) or {}
-        bb_mode = preflight.get("bb_browser_mode", "auto")
+    checks = preflight.get("checks", {}) or {}
+    bb_check = checks.get("bb_browser", {}) or {}
+    browser_use_check = checks.get("browser_use", {}) or {}
+    browser_runtime = (preflight.get("browser_runtime") or checks.get("browser_runtime") or {})
+    bb_mode = preflight.get("bb_browser_mode", "auto")
+    provider_name = args.provider if args.provider != "auto" else preflight.get("default_provider", "dry-run")
+
+    if provider_name == "browser-use-cli" and preflight:
+        if not browser_runtime.get("configured", False):
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "reason": "waiting_browser_runtime",
+                        "message": "Shared CDP browser is not configured. Set BACKLINK_BROWSER_CDP_URL (or pass --cdp-url to preflight) and rerun preflight.",
+                        "default_provider": preflight.get("default_provider", "dry-run"),
+                        "warnings": preflight.get("warnings", []),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 3
+        if not browser_runtime.get("ok", False) or not browser_use_check.get("smoke_ok", False):
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "reason": "waiting_browser",
+                        "message": "browser-use CLI is not ready for shared-CDP execution. Rerun preflight or use --provider dry-run/manual explicitly.",
+                        "default_provider": preflight.get("default_provider", "dry-run"),
+                        "warnings": preflight.get("warnings", []),
+                        "browser_runtime": browser_runtime,
+                        "browser_use": {
+                            "installed": browser_use_check.get("installed", False),
+                            "smoke_ok": browser_use_check.get("smoke_ok", False),
+                            "smoke_error": browser_use_check.get("smoke_error", ""),
+                        },
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 3
+    elif provider_name == "bb-browser" and preflight:
         if not bb_check.get("mode_allowed", True):
             print(
                 json.dumps(
@@ -208,6 +249,7 @@ def main() -> int:
             return 3
     store_path = Path(paths["task_store_path"]).expanduser().resolve()
     profile_path = Path(paths["profile_path"]).expanduser().resolve()
+    intake_path = Path(paths.get("intake_path") or profile_path.with_suffix('.intake.json')).expanduser().resolve()
     base_dir = Path(paths["base_dir"]).expanduser().resolve()
     artifacts_dir = Path(paths["artifacts_dir"]).expanduser().resolve()
     ledger_path = Path(paths["ledger_path"]).expanduser().resolve()
@@ -239,8 +281,11 @@ def main() -> int:
             auth_type=scout.get("auth_type", "unknown"),
             submission_type=scout.get("submission_type", "unknown"),
             requires_login=scout.get("requires_login", False),
+            oauth_providers=scout.get("oauth_providers", []),
             captcha_tier=scout.get("captcha_tier", "unknown"),
             anti_bot=scout.get("anti_bot", "unknown"),
+            blocker_type=scout.get("blocker_type", ""),
+            requires_reciprocal_backlink=scout.get("requires_reciprocal_backlink", False),
             submission_url=scout.get("candidate_submit_url", ""),
             notes=scout.get("notes", []),
         )
@@ -267,6 +312,8 @@ def main() -> int:
                 task["task_id"],
                 "--base-dir",
                 str(base_dir),
+                "--intake",
+                str(intake_path),
                 "--apply",
             ],
             cwd=repo_root,
@@ -298,6 +345,17 @@ def main() -> int:
         current_task = find_task(load_store(store_path), task["task_id"])
         save_json(task_path, current_task)
 
+        if plan["automation_disposition"] == "AUTO_SKIP":
+            skipped = finish_task(
+                store_path,
+                task["task_id"],
+                "skipped",
+                note=[f"skipped by plan: {plan['next_action']}", *plan.get("rationale", [])],
+                ledger_path=ledger_path,
+            )
+            print(json.dumps({"ok": True, "task": skipped, "executed": False, "reason": "auto_skip"}, ensure_ascii=False, indent=2))
+            return 0
+
         if plan["automation_disposition"] != "AUTO_EXECUTE":
             parked = finish_task(
                 store_path,
@@ -322,9 +380,11 @@ def main() -> int:
                 "--plan-file",
                 str(plan_path),
                 "--provider",
-                args.provider,
+                provider_name,
                 "--bb-mode",
                 preflight.get("bb_browser_mode", "auto"),
+                *(["--cdp-url", str(browser_runtime.get("cdp_url", ""))] if browser_runtime.get("cdp_url") else []),
+                *(["--playwright-ws-url", str(browser_runtime.get("playwright_ws_url", ""))] if browser_runtime.get("playwright_ws_url") else []),
                 *(["--credentials-file", str(credentials_file)] if credentials_file else []),
                 "--out",
                 str(artifacts_dir / f"{task['task_id']}-execution.json"),

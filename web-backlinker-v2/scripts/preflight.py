@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
+from browser_runtime import resolve_browser_runtime
 from common import now_iso, save_json, load_json
 
 
@@ -61,6 +62,32 @@ def detect_host_runtime(env: dict[str, str] | None = None) -> str:
     return "unknown"
 
 
+def resolve_browser_use_binary() -> str:
+    env_candidates = [
+        os.environ.get("BACKLINK_BROWSER_USE_BIN", ""),
+        os.environ.get("BROWSER_USE_BIN", ""),
+    ]
+    for candidate in env_candidates:
+        value = str(candidate or "").strip()
+        if value and Path(value).expanduser().exists():
+            return str(Path(value).expanduser().resolve())
+
+    discovered = shutil.which("browser-use")
+    if discovered:
+        return discovered
+
+    home = Path.home()
+    fallbacks = [
+        home / ".browser-use-env" / "bin" / "browser-use",
+        home / ".local" / "bin" / "browser-use",
+        home / ".browser-use-env" / "Scripts" / "browser-use.exe",
+    ]
+    for candidate in fallbacks:
+        if candidate.exists():
+            return str(candidate.resolve())
+    return ""
+
+
 def check_executable(name: str, version_args: list[str] | None, runner: CommandRunner) -> dict[str, Any]:
     path = shutil.which(name)
     result = {
@@ -72,7 +99,7 @@ def check_executable(name: str, version_args: list[str] | None, runner: CommandR
     }
     if not path or not version_args:
         return result
-    version_run = runner([name, *version_args], 5)
+    version_run = runner([path, *version_args], 5)
     result["ok"] = version_run["ok"]
     result["version"] = first_line(version_run["stdout"] or version_run["stderr"])
     if not version_run["ok"]:
@@ -89,21 +116,68 @@ def resolve_bb_mode(requested_mode: str, openclaw_available: bool) -> str:
     return normalized
 
 
+def check_browser_runtime(cdp_url: str, timeout: int) -> dict[str, Any]:
+    return resolve_browser_runtime(cdp_url=cdp_url, timeout=timeout)
+
+
+def check_browser_use(runner: CommandRunner, runtime: dict[str, Any], state_timeout: int) -> dict[str, Any]:
+    binary = resolve_browser_use_binary()
+    result = {
+        "installed": bool(binary),
+        "path": binary,
+        "version": "",
+        "ok": bool(binary),
+        "error": "",
+        "runtime_configured": bool(runtime.get("configured", False)),
+        "runtime_ok": bool(runtime.get("ok", False)),
+        "state_ok": False,
+        "smoke_ok": False,
+        "smoke_error": "",
+        "current_url": "",
+    }
+    if not binary:
+        return result
+
+    version_run = runner([binary, "--help"], 5)
+    result["ok"] = version_run["ok"]
+    result["version"] = first_line(version_run["stdout"] or version_run["stderr"])
+    if not version_run["ok"]:
+        result["error"] = version_run["stderr"] or version_run["stdout"]
+        return result
+    if not runtime.get("configured", False):
+        result["smoke_error"] = "No shared CDP URL configured. Set BACKLINK_BROWSER_CDP_URL, BROWSER_USE_CDP_URL, CHROME_CDP_URL, or pass --cdp-url."
+        return result
+    if not runtime.get("ok", False):
+        result["smoke_error"] = runtime.get("error", "CDP runtime probe failed")
+        return result
+
+    prefix = [binary, "--cdp-url", runtime.get("cdp_url", "")]
+    state_run = runner([*prefix, "state"], state_timeout)
+    result["state_ok"] = state_run["ok"] and bool((state_run["stdout"] or "").strip())
+    if not result["state_ok"]:
+        result["smoke_error"] = state_run["stderr"] or state_run["stdout"] or "browser-use state failed"
+        return result
+
+    url_run = runner([*prefix, "eval", "location.href"], 5)
+    result["current_url"] = first_line((url_run["stdout"] or "").replace("result:", "").strip()) if url_run["ok"] else ""
+    result["smoke_ok"] = True
+    return result
+
+
 def check_bb_browser(
     runner: CommandRunner,
     requested_mode: str,
-    open_timeout: int,
     snapshot_timeout: int,
     host_runtime: str = "",
 ) -> dict[str, Any]:
     installed = check_executable("bb-browser", ["--version"], runner)
-    openclaw_cli = runner(["bb-browser", "--help"], 5) if installed["installed"] else {"ok": False, "stdout": "", "stderr": ""}
+    bb_binary = installed.get("path") or "bb-browser"
+    openclaw_cli = runner([bb_binary, "--help"], 5) if installed["installed"] else {"ok": False, "stdout": "", "stderr": ""}
     openclaw_available = "--openclaw" in f"{openclaw_cli.get('stdout', '')}\n{openclaw_cli.get('stderr', '')}"
     active_host_runtime = host_runtime or detect_host_runtime()
     resolved_mode = resolve_bb_mode(requested_mode, openclaw_available) if installed["installed"] else requested_mode
     result = {
         **installed,
-        "open_ok": False,
         "snapshot_ok": False,
         "smoke_ok": False,
         "requested_mode": requested_mode,
@@ -126,19 +200,13 @@ def check_bb_browser(
         result["smoke_error"] = "mcp mode requires external MCP wiring; no local CLI smoke is attempted"
         return result
 
-    bb_prefix = ["bb-browser"]
+    bb_prefix = [bb_binary]
     if resolved_mode == "openclaw":
         bb_prefix.append("--openclaw")
 
-    open_run = runner([*bb_prefix, "open", "about:blank", "--tab"], open_timeout)
-    result["open_ok"] = open_run["ok"]
-    if not open_run["ok"]:
-        result["smoke_error"] = open_run["stderr"] or open_run["stdout"] or "bb-browser open failed"
-        return result
-
     snapshot_run = runner([*bb_prefix, "snapshot", "-i"], snapshot_timeout)
     result["snapshot_ok"] = snapshot_run["ok"] and bool(snapshot_run["stdout"])
-    result["smoke_ok"] = result["open_ok"] and result["snapshot_ok"]
+    result["smoke_ok"] = result["snapshot_ok"]
     if not result["smoke_ok"]:
         result["smoke_error"] = snapshot_run["stderr"] or snapshot_run["stdout"] or "bb-browser snapshot failed"
     return result
@@ -158,7 +226,7 @@ def check_gog(runner: CommandRunner) -> dict[str, Any]:
     if not installed["installed"]:
         return result
 
-    status_run = runner(["gog", "auth", "status", "--plain"], 5)
+    status_run = runner([installed.get("path") or "gog", "auth", "status", "--plain"], 5)
     result["ok"] = status_run["ok"]
     if not status_run["ok"]:
         result["error"] = status_run["stderr"] or status_run["stdout"] or "gog auth status failed"
@@ -180,6 +248,13 @@ def derive_preflight_summary(checks: dict[str, Any]) -> dict[str, Any]:
 
     node_ready = checks["node"]["installed"] and checks["node"]["ok"]
     pnpm_ready = checks["pnpm"]["installed"] and checks["pnpm"]["ok"]
+
+    browser_runtime = checks.get("browser_runtime", {}) or {}
+    browser_use = checks.get("browser_use", {}) or {}
+    browser_runtime_configured = bool(browser_runtime.get("configured", False))
+    browser_runtime_ok = bool(browser_runtime.get("ok", False))
+    browser_use_ready = browser_runtime_configured and browser_runtime_ok and browser_use.get("installed", False) and browser_use.get("smoke_ok", False)
+
     bb_ready = checks["bb_browser"]["installed"] and checks["bb_browser"]["smoke_ok"]
     gog_installed = checks["gog"]["installed"]
     gog_configured = checks["gog"]["configured"]
@@ -193,6 +268,17 @@ def derive_preflight_summary(checks: dict[str, Any]) -> dict[str, Any]:
         warnings.append("pnpm_missing")
     if not mode_allowed:
         blockers.append("bb_browser_mode_not_supported")
+
+    if browser_runtime_configured:
+        if not browser_runtime_ok:
+            warnings.append("browser_cdp_probe_failed")
+        if not browser_use.get("installed", False):
+            warnings.append("browser_use_missing")
+        elif not browser_use.get("smoke_ok", False):
+            warnings.append("browser_use_smoke_failed")
+    elif not bb_ready:
+        warnings.append("browser_cdp_unconfigured")
+
     if not checks["bb_browser"]["installed"]:
         warnings.append("bb_browser_missing")
     elif not checks["bb_browser"]["smoke_ok"]:
@@ -205,29 +291,45 @@ def derive_preflight_summary(checks: dict[str, Any]) -> dict[str, Any]:
     if bb_mode == "mcp":
         warnings.append("bb_browser_mcp_requires_external_wiring")
 
-    default_provider = "bb-browser" if bb_ready and bb_mode != "mcp" and mode_allowed else "dry-run"
+    if browser_use_ready:
+        default_provider = "browser-use-cli"
+    elif bb_ready and bb_mode != "mcp" and mode_allowed:
+        default_provider = "bb-browser"
+    else:
+        default_provider = "dry-run"
+
     return {
         "generated_at": now_iso(),
         "host_runtime": host_runtime,
         "bb_browser_mode": bb_mode,
         "default_provider": default_provider,
-        "ready_for_real_submit": node_ready and bb_ready and mode_allowed,
+        "ready_for_real_submit": node_ready and (browser_use_ready or (bb_ready and mode_allowed)),
         "ready_for_verification": gog_installed and gog_configured,
         "blockers": blockers,
         "warnings": warnings,
+        "browser_runtime": browser_runtime,
     }
 
 
-def run_preflight_checks(runner: CommandRunner | None = None, bb_mode: str = "auto", open_timeout: int = 10, snapshot_timeout: int = 8) -> dict[str, Any]:
+def run_preflight_checks(
+    runner: CommandRunner | None = None,
+    bb_mode: str = "auto",
+    snapshot_timeout: int = 8,
+    browser_state_timeout: int = 8,
+    cdp_url: str = "",
+    cdp_timeout: int = 5,
+) -> dict[str, Any]:
     command_runner = runner or run_command
     host_runtime = detect_host_runtime()
+    browser_runtime = check_browser_runtime(cdp_url=cdp_url, timeout=cdp_timeout)
     checks = {
         "node": check_executable("node", ["-v"], command_runner),
         "pnpm": check_executable("pnpm", ["-v"], command_runner),
+        "browser_runtime": browser_runtime,
+        "browser_use": check_browser_use(command_runner, browser_runtime, browser_state_timeout),
         "bb_browser": check_bb_browser(
             command_runner,
             requested_mode=bb_mode,
-            open_timeout=open_timeout,
             snapshot_timeout=snapshot_timeout,
             host_runtime=host_runtime,
         ),
@@ -254,11 +356,19 @@ def main() -> int:
     parser.add_argument("--manifest", default="")
     parser.add_argument("--out", default="")
     parser.add_argument("--bb-mode", default="auto", choices=sorted(BB_MODES))
-    parser.add_argument("--open-timeout", type=int, default=10)
     parser.add_argument("--snapshot-timeout", type=int, default=8)
+    parser.add_argument("--browser-state-timeout", type=int, default=8)
+    parser.add_argument("--cdp-url", default="")
+    parser.add_argument("--cdp-timeout", type=int, default=5)
     args = parser.parse_args()
 
-    payload = run_preflight_checks(bb_mode=args.bb_mode, open_timeout=args.open_timeout, snapshot_timeout=args.snapshot_timeout)
+    payload = run_preflight_checks(
+        bb_mode=args.bb_mode,
+        snapshot_timeout=args.snapshot_timeout,
+        browser_state_timeout=args.browser_state_timeout,
+        cdp_url=args.cdp_url,
+        cdp_timeout=args.cdp_timeout,
+    )
     if args.out:
         save_json(Path(args.out).expanduser().resolve(), payload)
     if args.manifest:

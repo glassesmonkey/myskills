@@ -49,7 +49,21 @@ def playbook_confidence(playbook: dict[str, Any]) -> float:
     return max(float(playbook.get("replay_confidence", 0.0) or 0.0), float(playbook.get("stability_score", 0.0) or 0.0))
 
 
-def choose_plan(task: dict[str, Any], playbook: dict[str, Any], account: dict[str, Any] | None, min_direct: float, min_observe: float) -> dict[str, Any]:
+def choose_plan(
+    task: dict[str, Any],
+    playbook: dict[str, Any],
+    account: dict[str, Any] | None,
+    intake: dict[str, Any] | None = None,
+    min_direct: float = 0.85,
+    min_observe: float = 0.60,
+) -> dict[str, Any]:
+    if intake is not None and not isinstance(intake, dict):
+        legacy_min_direct = float(intake)
+        legacy_min_observe = min_direct
+        intake = {}
+        min_direct = legacy_min_direct
+        min_observe = legacy_min_observe
+    intake = intake or {}
     route = "scout_more"
     execution_mode = "session_browser"
     automation_disposition = "ASSISTED_EXECUTE"
@@ -60,18 +74,34 @@ def choose_plan(task: dict[str, Any], playbook: dict[str, Any], account: dict[st
     anti_bot = str(task.get("anti_bot", "unknown")).strip().lower()
     captcha_tier = str(task.get("captcha_tier", "unknown")).strip().lower()
     auth_type = str(task.get("auth_type", "unknown")).strip().lower()
+    oauth_providers = [str(item).strip().lower() for item in (task.get("oauth_providers", []) or []) if str(item).strip()]
     site_type = str(task.get("site_type", "unknown")).strip().lower()
+    blocker_type = str(task.get("blocker_type", "")).strip().lower()
+    requires_reciprocal_backlink = bool(task.get("requires_reciprocal_backlink", False)) or blocker_type == "reciprocal_backlink_required"
+    oauth_allowed = bool(intake.get("allow_oauth_login", False))
 
     if anti_bot in HARD_ANTI_BOT:
         return {
             "route": "park_hard_antibot",
             "execution_mode": "manual",
-            "automation_disposition": "DEFER_RETRY",
-            "next_action": "park_row",
+            "automation_disposition": "AUTO_SKIP",
+            "next_action": "skip_row",
             "playbook_id": playbook.get("playbook_id", "") if playbook else "",
             "playbook_confidence": confidence,
             "account_ref": account.get("account_ref", "") if account else "",
             "rationale": [f"hard_antibot:{anti_bot}"],
+        }
+
+    if requires_reciprocal_backlink:
+        return {
+            "route": "park_reciprocal_backlink",
+            "execution_mode": "manual",
+            "automation_disposition": "ASSISTED_EXECUTE",
+            "next_action": "decide_reciprocal_backlink",
+            "playbook_id": playbook.get("playbook_id", "") if playbook else "",
+            "playbook_confidence": confidence,
+            "account_ref": account.get("account_ref", "") if account else "",
+            "rationale": ["reciprocal_backlink_required"],
         }
 
     if playbook and confidence >= min_direct and playbook.get("steps"):
@@ -104,13 +134,16 @@ def choose_plan(task: dict[str, Any], playbook: dict[str, Any], account: dict[st
         automation_disposition = "AUTO_EXECUTE"
         next_action = "signup_then_watch_email"
         rationale.append("email_signup_preferred")
-    elif auth_type == "google_oauth":
-        has_session = bool((account or {}).get("browser_profile_ref") or playbook.get("browser_profile_ref"))
-        route = "google_oauth_login"
+    elif auth_type in {"google_oauth", "facebook_oauth", "oauth"}:
+        preferred_provider = "google" if "google" in oauth_providers or auth_type == "google_oauth" else "facebook" if "facebook" in oauth_providers or auth_type == "facebook_oauth" else "oauth"
+        route = f"{preferred_provider}_oauth_login" if preferred_provider in {"google", "facebook"} else "oauth_login"
         execution_mode = "session_browser"
-        automation_disposition = "AUTO_EXECUTE" if has_session else "ASSISTED_EXECUTE"
-        next_action = "login_with_existing_session" if has_session else "start_oauth_and_expect_human_credentials_if_needed"
+        automation_disposition = "AUTO_EXECUTE" if oauth_allowed else "ASSISTED_EXECUTE"
+        next_action = "login_with_existing_shared_session" if oauth_allowed else "start_oauth_and_expect_human_credentials_if_needed"
         rationale.append("oauth_route")
+        rationale.append(f"oauth_provider:{preferred_provider}")
+        if not oauth_allowed:
+            rationale.append("oauth_not_allowed_by_policy")
     elif auth_type == "magic_link":
         route = "magic_link_login"
         execution_mode = "session_browser"
@@ -148,6 +181,7 @@ def main() -> int:
     parser.add_argument("--base-dir", default=str(default_base_dir()))
     parser.add_argument("--playbooks-dir", default="")
     parser.add_argument("--accounts", default="")
+    parser.add_argument("--intake", default="")
     parser.add_argument("--min-direct-confidence", type=float, default=0.85)
     parser.add_argument("--min-observe-confidence", type=float, default=0.60)
     parser.add_argument("--apply", action="store_true")
@@ -157,13 +191,15 @@ def main() -> int:
     base_dir = Path(args.base_dir).expanduser().resolve()
     accounts_path = Path(args.accounts).expanduser().resolve() if args.accounts else base_dir / "accounts" / "site-accounts.json"
     playbooks_dir = Path(args.playbooks_dir).expanduser().resolve() if args.playbooks_dir else base_dir / "playbooks"
+    intake_path = Path(args.intake).expanduser().resolve() if args.intake else Path("")
 
     store = load_store(store_path)
     task = find_task(store, args.task_id)
     domain = task.get("domain") or domain_from_url(task.get("normalized_url", ""))
     playbook, playbook_path = find_playbook(playbooks_dir, domain)
     account = find_account(accounts_path, domain)
-    plan = choose_plan(task, playbook, account, args.min_direct_confidence, args.min_observe_confidence)
+    intake = load_json(intake_path, {}) if args.intake else {}
+    plan = choose_plan(task, playbook, account, intake, args.min_direct_confidence, args.min_observe_confidence)
     plan["playbook_path"] = str(playbook_path) if playbook_path else ""
 
     if args.apply:

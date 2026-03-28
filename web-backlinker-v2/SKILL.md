@@ -19,6 +19,8 @@ Turn backlink work into a resumable system instead of a one-off browser sprint. 
   Read before the first real worker run. Use it to collect required business facts and policy boundaries, then keep the run in `WAITING_CONFIG` until the intake is complete.
 - `references/runtime.md`
   Use before bootstrapping or draining a task list.
+- `references/browser-runtime.md`
+  Use when configuring shared Chrome CDP execution, `browser-use` CLI, or Playwright handoff.
 - `references/site-memory.md`
   Use when deciding whether to probe again, reuse an old route, or promote a successful path into a stable playbook.
 - `references/auth-and-verification.md`
@@ -72,8 +74,11 @@ If `required_missing` is non-empty:
 ```bash
 python3 scripts/preflight.py \
   --manifest data/backlink-helper/runs/<run-id>.json \
-  --bb-mode auto
+  --bb-mode auto \
+  --cdp-url "$BACKLINK_BROWSER_CDP_URL"
 ```
+
+If `--cdp-url` is omitted, preflight falls back to `BACKLINK_BROWSER_CDP_URL`, `BROWSER_USE_CDP_URL`, then `CHROME_CDP_URL`.
 
 `bb-mode` meanings:
 
@@ -85,14 +90,13 @@ python3 scripts/preflight.py \
 
 ## Browser Routing Rules
 
-- Prefer `bb-browser` for any real submission, login, OAuth, or authenticated browser flow.
+- Prefer shared-CDP `browser-use-cli` when a reusable Chrome endpoint is configured.
+- Use Playwright as the deterministic assertion / final-submit layer on top of that same shared CDP browser when an adapter needs stronger guarantees.
+- Fall back to `bb-browser` only when shared CDP is unavailable or the operator explicitly prefers it.
 - In Codex, never auto-invoke OpenClaw just because `bb-browser` supports `--openclaw`.
 - In Codex, if `bb-mode=openclaw` is requested anyway, preflight must stop and tell the operator to use `standalone_extension` or move the whole run into OpenClaw.
-- Do not switch to Chrome DevTools / `agent-browser` / other browser tooling for submission execution unless:
-  - the user explicitly asks for that tool, or
-  - `bb-browser` mode is disabled, or
-  - the task is read-only reconnaissance rather than real submission.
-- If `bb-browser` preflight fails, stop and report the failure clearly. Do not silently continue the same submission flow with a different browser stack.
+- Do not switch to unrelated browser stacks mid-submission just because one provider is temporarily awkward. Resolve provider choice in preflight, then keep one shared browser context per task.
+- If both shared-CDP `browser-use-cli` and `bb-browser` preflight fail, stop and report the failure clearly. Do not silently continue the same submission flow with a different browser stack.
 
 5. Import the target list and apply cross-run dedupe.
 
@@ -139,6 +143,17 @@ python3 scripts/run_next.py \
   --provider auto
 ```
 
+For unattended queue draining, prefer the small-batch wrapper so one cron tick can process a few rows serially without overlapping another worker:
+
+```bash
+python3 scripts/run_batch.py \
+  --manifest data/backlink-helper/runs/<run-id>.json \
+  --provider auto \
+  --max-tasks 3 \
+  --task-timeout 480 \
+  --max-seconds 1320
+```
+
 11. Record reusable memory immediately after each meaningful result.
    On success, update the site playbook and submission ledger.
    On account creation, update the account registry.
@@ -153,9 +168,11 @@ python3 scripts/run_next.py \
 - Always build the submitted URL through `scripts/build_utm_url.py`.
 - Always check the existing site playbook before probing a known target again.
 - Always check the account registry before opening a new signup flow.
+- Always keep probing promising target-site paths without pausing for operator confirmation, until one of three things happens: (1) a real submit form is found, (2) a hard boundary is confirmed, or (3) the route is proven dead (404/paywall/no live submit path).
 - Always park one blocked row and continue with the rest of the list.
 - Never submit the same promoted site to the same target twice.
 - Never bypass Cloudflare, reCAPTCHA, hCaptcha, or managed anti-bot walls.
+- Never auto-accept reciprocal backlink or badge-exchange requirements; park the row as `WAITING_HUMAN` and tag it with blocker type `reciprocal_backlink_required`.
 - Never invent product claims, prices, customers, or company facts.
 - Never start submit/signup/verify steps while the run is still `WAITING_CONFIG`.
 - Never route a real submission flow into Chrome DevTools or another browser stack just because `bb-browser` is not ready.
@@ -171,7 +188,7 @@ Prefer routes in this order unless the target site clearly forces something else
 5. Google OAuth
 6. Park the row for later review
 
-Email signup is preferred over OAuth when both are equally practical. OAuth is allowed when the site strongly prefers it and the scopes look normal.
+Email signup is preferred over OAuth when both are equally practical. OAuth is allowed when the site strongly prefers it and the scopes look normal. If the shared browser session already has a live Google or Facebook login, treat that as a reusable path and attempt the OAuth route instead of parking it by default.
 
 ## Continuous Execution Model
 
@@ -224,7 +241,7 @@ Use the policy in `references/captcha-policy.md`.
 Short version:
 
 - simple text, math, or obvious single-image prompts: one careful attempt is allowed
-- Cloudflare, Turnstile, reCAPTCHA, hCaptcha, or managed challenge loops: stop and park
+- Cloudflare, Turnstile, reCAPTCHA, hCaptcha, or managed challenge loops: stop and skip the row
 
 ## Bundled Scripts
 
@@ -232,7 +249,9 @@ Short version:
 - `scripts/build_utm_url.py`: create tracked submission URLs
 - `scripts/probe_promoted_site.py`: build or refresh the promoted-site material pack
 - `scripts/init_intake.py`: merge inferred profile facts with operator-provided required fields and enforce `WAITING_CONFIG`
-- `scripts/preflight.py`: verify local execution prerequisites such as `bb-browser`, `gog`, `node`, and `pnpm`
+- `scripts/browser_runtime.py`: resolve shared-CDP browser endpoints for `browser-use` CLI and Playwright
+- `scripts/playwright_cdp.py`: run deterministic Playwright actions against the same shared browser
+- `scripts/preflight.py`: verify local execution prerequisites such as shared CDP reachability, `browser-use`, `bb-browser`, `gog`, `node`, and `pnpm`
 - `scripts/scout_target.py`: scout a target site and classify forms, auth, anti-bot, and likely submit entrypoints
 - `scripts/scaffold_playbook.py`: turn a fresh scout result into a reusable site playbook stub
 - `scripts/prepare_worker_brief.py`: compress task, profile, playbook, and account memory into one worker-ready brief
@@ -242,6 +261,7 @@ Short version:
 - `scripts/select_execution_plan.py`: choose the next route from task, playbook, and account memory
 - `scripts/gmail_watch.py`: find verification emails, links, and OTP codes through `gog`
 - `scripts/run_next.py`: claim one runnable task, scout it, select a route, and execute or park it
+- `scripts/run_batch.py`: hold a run-level single-flight lock and execute a small serial batch of `run_next` calls for unattended cron workers
 
 ## Execution Core
 
@@ -253,7 +273,8 @@ pnpm install
 
 The Node execution core lives under `packages/execution-core/` and is responsible for:
 
-- provider abstraction (`bb-browser`, `dry-run`, `manual`)
+- provider abstraction (`browser-use-cli`, `bb-browser`, `dry-run`, `manual`)
 - adapter selection for known sites
 - generic form-submit fallback
 - cheap scout output for browser-oriented paths
+- passing shared-CDP runtime (`cdpUrl`, `playwrightWsUrl`) into adapters

@@ -138,6 +138,9 @@ export function detectAuthType(pageModel) {
   if (/(sign in with google|continue with google|google oauth)/.test(lowered)) {
     return 'google_oauth';
   }
+  if (/(sign in with facebook|continue with facebook|log in with facebook|facebook oauth)/.test(lowered)) {
+    return 'facebook_oauth';
+  }
   if (/(magic link|email me a link)/.test(lowered)) {
     return 'magic_link';
   }

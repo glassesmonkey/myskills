@@ -19,6 +19,7 @@ class SelectExecutionPlanTests(unittest.TestCase):
         plan = choose_plan(task, {}, None, 0.85, 0.60)
         self.assertEqual(plan["route"], "park_hard_antibot")
         self.assertEqual(plan["execution_mode"], "manual")
+        self.assertEqual(plan["automation_disposition"], "AUTO_SKIP")
 
     def test_validated_playbook_runs_directly(self):
         task = {

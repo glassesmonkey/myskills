@@ -1,9 +1,11 @@
+import aihunter from './aihunter.js';
+import aitoolguru from './aitoolguru.js';
 import generic from './generic.js';
 import saashub from './saashub.js';
 import submitaitools from './submitaitools.js';
 import { siteSlugFromDomain } from '../utils/url.js';
 
-const ADAPTERS = [saashub, submitaitools, generic];
+const ADAPTERS = [aihunter, aitoolguru, saashub, submitaitools, generic];
 
 export function listAdapters() {
   return ADAPTERS.map((adapter) => ({

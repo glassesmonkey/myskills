@@ -100,10 +100,13 @@ def normalize_task(task: dict[str, Any]) -> dict[str, Any]:
         "attempts": int(task.get("attempts", 0) or 0),
         "site_type": str(task.get("site_type", "unknown")).strip() or "unknown",
         "auth_type": str(task.get("auth_type", "unknown")).strip() or "unknown",
+        "oauth_providers": [str(item).strip().lower() for item in (task.get("oauth_providers", []) or []) if str(item).strip()],
         "submission_type": str(task.get("submission_type", "unknown")).strip() or "unknown",
         "requires_login": bool(task.get("requires_login", False)),
         "captcha_tier": str(task.get("captcha_tier", "unknown")).strip() or "unknown",
         "anti_bot": str(task.get("anti_bot", "unknown")).strip() or "unknown",
+        "blocker_type": str(task.get("blocker_type", "")).strip(),
+        "requires_reciprocal_backlink": bool(task.get("requires_reciprocal_backlink", False)),
         "route": str(task.get("route", "")).strip(),
         "execution_mode": str(task.get("execution_mode", "")).strip(),
         "automation_disposition": str(task.get("automation_disposition", "")).strip(),
@@ -270,6 +273,8 @@ def main() -> int:
     checkpoint.add_argument("--requires-login", default=None)
     checkpoint.add_argument("--captcha-tier", default="")
     checkpoint.add_argument("--anti-bot", default="")
+    checkpoint.add_argument("--blocker-type", default="")
+    checkpoint.add_argument("--requires-reciprocal-backlink", default=None)
     checkpoint.add_argument("--route", default="")
     checkpoint.add_argument("--execution-mode", default="")
     checkpoint.add_argument("--automation-disposition", default="")
@@ -383,6 +388,11 @@ def main() -> int:
             task["captcha_tier"] = args.captcha_tier
         if args.anti_bot:
             task["anti_bot"] = args.anti_bot
+        if args.blocker_type:
+            task["blocker_type"] = args.blocker_type
+        requires_reciprocal_backlink = coerce_bool(args.requires_reciprocal_backlink)
+        if requires_reciprocal_backlink is not None:
+            task["requires_reciprocal_backlink"] = requires_reciprocal_backlink
         if args.route:
             task["route"] = args.route
         if args.execution_mode:
@@ -450,10 +460,14 @@ def main() -> int:
     released = release_stale_locks(data)
     save_store(store_path, data)
     counts: dict[str, int] = {}
+    blocker_counts: dict[str, int] = {}
     for task in data["tasks"]:
-        status = normalize_task(task)["status"]
+        normalized = normalize_task(task)
+        status = normalized["status"]
         counts[status] = counts.get(status, 0) + 1
-    print(json.dumps({"ok": True, "released": released, "counts": counts, "total": len(data["tasks"])}, ensure_ascii=False, indent=2))
+        if normalized["blocker_type"]:
+            blocker_counts[normalized["blocker_type"]] = blocker_counts.get(normalized["blocker_type"], 0) + 1
+    print(json.dumps({"ok": True, "released": released, "counts": counts, "blocker_counts": blocker_counts, "total": len(data["tasks"])}, ensure_ascii=False, indent=2))
     return 0
 
 

@@ -9,6 +9,7 @@ Before writing externally, reduce an unknown target site to a small structured s
 - likely site type
 - likely auth type
 - likely anti-bot level
+- whether reciprocal backlink / badge exchange is required
 - submit-related links
 - visible forms and fields
 - likely reusable field map
@@ -26,6 +27,7 @@ Do not over-scout. You have enough when you know:
 - whether the row is worth auto-executing
 - whether login is required
 - whether advanced anti-bot is present
+- whether reciprocal backlink requirements should park the row for human review
 - which page should become the submit entrypoint
 
 ## Outputs That Matter Later
